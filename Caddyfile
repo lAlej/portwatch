@@ -1,0 +1,16 @@
+# Plain HTTP for self-hosted. Listening on :8080 (non-privileged) — open
+# this port on the VPS firewall (ufw / cloud security group) and access
+# at http://<vps-ip>:8080.
+#
+# For production behind a domain + auto-TLS, replace `:8080` with your
+# domain and add a `tls { email you@example.com }` block.
+
+:8080 {
+	encode gzip zstd
+
+	reverse_proxy /api/* backend:4000
+	reverse_proxy /socket.io/* backend:4000 {
+		header_up Host {host}
+	}
+	reverse_proxy /* frontend:80
+}

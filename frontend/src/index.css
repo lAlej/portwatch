@@ -1,0 +1,149 @@
+/* Hallmark · genre: modern-minimal · macrostructure: bento · theme: cobalt-light
+   · nav: N5 · footer: Ft2 · design-system: design.md · designed-as-app */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+
+  /* paper & ink */
+  --color-paper:     oklch(98.5% 0.004 80);
+  --color-paper-2:   oklch(96.0% 0.005 80);
+  --color-paper-3:   oklch(93.0% 0.006 80);
+  --color-rule:      oklch(91.0% 0.008 80);
+  --color-muted:     oklch(55.0% 0.010 70);
+  --color-ink:       oklch(22.0% 0.012 60);
+  --color-ink-2:     oklch(38.0% 0.012 60);
+
+  /* accent — single restrained cobalt */
+  --color-accent:        #0046FF;
+  --color-accent-soft:   #1a5cff;
+  --color-accent-ink:    #ffffff;
+
+  /* state */
+  --color-state-running:  oklch(58% 0.16 152);
+  --color-state-paused:   oklch(72% 0.16 75);
+  --color-state-exited:   oklch(55% 0.012 70);
+  --color-state-error:    oklch(58% 0.20 28);
+  --color-state-restarting: oklch(60% 0.14 240);
+
+  /* focus */
+  --color-focus:      oklch(50% 0.22 255);
+
+  /* type */
+  --font-sans:  'Inter Tight', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:  'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* text scale (1.25 ratio from 16px) */
+  --text-xs:      0.75rem;
+  --text-sm:      0.875rem;
+  --text-base:    1rem;
+  --text-md:      1.125rem;
+  --text-lg:      1.4375rem;
+  --text-xl:      1.8125rem;
+  --text-2xl:     2.3125rem;
+  --text-display: clamp(2.25rem, 4vw + 0.5rem, 3.5rem);
+
+  /* spacing scale (4pt) */
+  --space-3xs: 0.125rem;
+  --space-2xs: 0.25rem;
+  --space-xs:  0.5rem;
+  --space-sm:  0.75rem;
+  --space-md:  1rem;
+  --space-lg:  1.5rem;
+  --space-xl:  2.5rem;
+  --space-2xl: 4rem;
+  --space-3xl: 6rem;
+
+  /* radius */
+  --radius-input: 8px;
+  --radius-card:  10px;
+  --radius-pill:  999px;
+
+  /* motion */
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in:     cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro:   120ms;
+  --dur-short:   200ms;
+  --dur-long:    320ms;
+
+  /* z */
+  --z-base:     1;
+  --z-raised:   10;
+  --z-dropdown: 100;
+  --z-sticky:   200;
+  --z-modal:    400;
+  --z-toast:    500;
+  --z-tooltip:  600;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+html, body { overflow-x: clip; }
+
+::selection {
+  background: oklch(50% 0.22 255 / 0.18);
+  color: var(--color-ink);
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+.mono    { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* focus ring — instant, never animated */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* scrollbar — restrained */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-rule);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* first-load orchestrated entrance — single pass, ≤ 500ms total stagger */
+@keyframes hm-reveal {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.reveal {
+  opacity: 0;
+  animation: hm-reveal var(--dur-long) var(--ease-out) forwards;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 150ms !important;
+    transition-duration: 150ms !important;
+  }
+  .reveal { animation-name: hm-reveal-reduced; }
+  @keyframes hm-reveal-reduced {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+}

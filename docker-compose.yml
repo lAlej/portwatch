@@ -1,0 +1,40 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    expose:
+      - "4000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE: ""
+    restart: unless-stopped
+    depends_on:
+      - backend
+    expose:
+      - "80"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    # Non-privileged port — open :8080 on the VPS firewall.
+    # To switch to HTTPS + standard ports later, edit Caddyfile and
+    # change this back to "80:80" + "443:443".
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_conf:/config
+    depends_on:
+      - frontend
+
+volumes:
+  caddy_data:
+  caddy_conf:
