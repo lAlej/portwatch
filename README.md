@@ -137,6 +137,8 @@ Open <http://localhost:5173>. Sign in with the username/password you hashed.
 
 ---
 
+---
+
 ## Production (on the VPS)
 
 ```bash
@@ -205,6 +207,19 @@ Frontend build arg (set in `docker-compose.yml`):
 - **Docker socket mounted read-only.** Start/pause/restart/kill are runtime
   ops against an existing container, not image / volume / network ops.
   You cannot `docker pull` or build through this app. Pull on the host.
+- **Self-containers are hidden.** Containers whose `com.docker.compose.project`
+  is `portwatch` (the constant `SELF_COMPOSE_PROJECT` in
+  `DockerContainerRepository.ts`) are filtered out at the repository layer,
+  so the dashboard's own backend, frontend and caddy containers never
+  appear in the list — preventing an accidental kill that would take down
+  the UI itself. Containers started outside compose (no project label)
+  are always shown. If you rename the repo directory or use `docker compose
+  -p another-name`, update that constant.
+- **Containers are grouped by compose project.** The dashboard has a Flat /
+  Grouped toggle (persisted in `localStorage`). In Grouped mode, each
+  compose project is rendered as a collapsible section with running/total
+  counts; containers without a compose label fall into a `standalone`
+  group rendered last.
 
 ---
 

@@ -7,6 +7,23 @@ import type {
 } from '../../domain/entities/Container.js';
 import { NotFoundError, InvalidStateError, DockerUnavailableError } from '../../lib/errors.js';
 
+/**
+ * Compose project name de este stack. Los containers que pertenezcan a este
+ * project se ocultan del dashboard para que un click accidental en Kill no
+ * tumbe el propio Portwatch. Si renombras el directorio del repo o usas
+ * `docker compose -p otro-nombre`, actualiza este constante.
+ */
+const SELF_COMPOSE_PROJECT = 'portwatch';
+
+/**
+ * Devuelve true si el container pertenece al propio stack de Portwatch y
+ * debe ocultarse del listado. Containers sin label de compose (lanzados
+ * con `docker run`) nunca se ocultan.
+ */
+function isSelfComposeProject(project: string | undefined): boolean {
+  return project !== undefined && project === SELF_COMPOSE_PROJECT;
+}
+
 function mapState(raw: string): ContainerState {
   const allowed: ContainerState[] = [
     'running',
@@ -46,17 +63,19 @@ export class DockerContainerRepository implements ContainerRepository {
       throw new DockerUnavailableError((err as Error).message);
     }
     const now = Date.now();
-    return raw.map((c) => ({
-      id: c.Id,
-      name: (c.Names[0] ?? '/').replace(/^\//, ''),
-      image: c.Image,
-      state: mapState(c.State),
-      status: c.Status,
-      created: c.Created * 1000,
-      ports: mapPorts(c.Ports),
-      uptimeSeconds: c.State === 'running' ? Math.max(0, Math.floor((now - c.Created * 1000) / 1000)) : null,
-      labels: c.Labels ?? {},
-    }));
+    return raw
+      .filter((c) => !isSelfComposeProject(c.Labels?.['com.docker.compose.project']))
+      .map((c) => ({
+        id: c.Id,
+        name: (c.Names[0] ?? '/').replace(/^\//, ''),
+        image: c.Image,
+        state: mapState(c.State),
+        status: c.Status,
+        created: c.Created * 1000,
+        ports: mapPorts(c.Ports),
+        uptimeSeconds: c.State === 'running' ? Math.max(0, Math.floor((now - c.Created * 1000) / 1000)) : null,
+        labels: c.Labels ?? {},
+      }));
   }
 
   async start(id: string): Promise<void> {
