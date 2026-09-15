@@ -29,11 +29,13 @@ interface ProjectsState {
   error: string | null;
   lastStatusByProject: Record<string, DeploymentStatus | undefined>;
   deploys: Record<string, DeployState>;
+  activeDeployId: string | null;
   fetch: () => Promise<void>;
   add: (cloneUrl: string, envVars: EnvVar[]) => Promise<Project>;
   updateEnv: (id: string, envVars: EnvVar[]) => Promise<void>;
   remove: (id: string) => Promise<void>;
   triggerDeploy: (projectId: string) => Promise<string>;
+  openDeploy: (deploymentId: string) => void;
   subscribeDeploy: (deploymentId: string, projectId: string) => () => void;
   closeDeploy: (deploymentId: string) => void;
 }
@@ -55,6 +57,7 @@ export const useProjects = create<ProjectsState>((set) => ({
   error: null,
   lastStatusByProject: {},
   deploys: {},
+  activeDeployId: null,
 
   fetch: async () => {
     set({ loading: true, error: null });
@@ -110,8 +113,13 @@ export const useProjects = create<ProjectsState>((set) => ({
         ...s.deploys,
         [deploymentId]: emptyDeployState(deploymentId, projectId),
       },
+      activeDeployId: deploymentId,
     }));
     return deploymentId;
+  },
+
+  openDeploy: (deploymentId) => {
+    set({ activeDeployId: deploymentId });
   },
 
   subscribeDeploy: (deploymentId, projectId) => {
@@ -140,6 +148,7 @@ export const useProjects = create<ProjectsState>((set) => ({
         return { deploys, lastStatusByProject };
       });
     };
+    socket.off(event);
     socket.emit('subscribe', { channel: 'deploy', id: deploymentId });
     socket.on(event, handler);
     return () => {
@@ -152,7 +161,8 @@ export const useProjects = create<ProjectsState>((set) => ({
     set((s) => {
       const next = { ...s.deploys };
       delete next[deploymentId];
-      return { deploys: next };
+      const activeDeployId = s.activeDeployId === deploymentId ? null : s.activeDeployId;
+      return { deploys: next, activeDeployId };
     });
   },
 }));

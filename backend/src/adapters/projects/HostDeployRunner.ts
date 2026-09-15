@@ -4,6 +4,7 @@ import type { DeployRunner, DeployEvent } from '../../domain/ports/DeployRunner.
 import type { Git } from '../../domain/ports/Git.js';
 import type { DockerComposeRunner } from '../../domain/ports/DockerComposeRunner.js';
 import type { Logger } from '../../domain/ports/Logger.js';
+import { sanitizeProjectName } from '../../lib/projectName.js';
 
 export class HostDeployRunner implements DeployRunner {
   constructor(
@@ -73,9 +74,4 @@ export class HostDeployRunner implements DeployRunner {
   async cancel(_deploymentId: string): Promise<void> {
     // v1: cancel is a no-op. The process runs to completion or failure.
   }
-}
-
-function sanitizeProjectName(name: string): string {
-  const s = name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
-  return s || 'project';
 }

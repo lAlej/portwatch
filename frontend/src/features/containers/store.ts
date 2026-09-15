@@ -6,6 +6,7 @@ interface ContainersState {
   items: Container[];
   loading: boolean;
   error: string | null;
+  projectFor: Map<string, string | null>;
   fetch: () => Promise<void>;
   start: (id: string) => Promise<void>;
   pause: (id: string) => Promise<void>;
@@ -13,6 +14,7 @@ interface ContainersState {
   restart: (id: string) => Promise<void>;
   kill: (id: string) => Promise<void>;
   refreshOne: (id: string) => Promise<void>;
+  resolveProject: (id: string) => Promise<string | null>;
 }
 
 async function refreshAfter(act: () => Promise<unknown>): Promise<void> {
@@ -25,6 +27,7 @@ export const useContainers = create<ContainersState>((set, get) => ({
   items: [],
   loading: false,
   error: null,
+  projectFor: new Map(),
 
   fetch: async () => {
     set({ loading: true, error: null });
@@ -70,6 +73,23 @@ export const useContainers = create<ContainersState>((set, get) => ({
       set({ items: next });
     } catch {
       /* ignore */
+    }
+  },
+
+  resolveProject: async (id) => {
+    const cached = get().projectFor.get(id);
+    if (cached !== undefined) return cached;
+    try {
+      const projectId = await containersApi.getProject(id);
+      const next = new Map(get().projectFor);
+      next.set(id, projectId);
+      set({ projectFor: next });
+      return projectId;
+    } catch {
+      const next = new Map(get().projectFor);
+      next.set(id, null);
+      set({ projectFor: next });
+      return null;
     }
   },
 }));

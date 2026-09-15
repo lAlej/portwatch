@@ -1,18 +1,24 @@
 /* Hallmark · genre: modern-minimal · row: clean, square icon buttons, no side-stripe */
 
-import { Play, RotateCw, Pause, Trash2 } from 'lucide-react';
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import type { Container } from '@/shared/lib/schemas';
 import { StatePill } from '@/shared/ui/Badge';
 import { useContainers } from './store';
-import { IconButton } from '@/shared/ui/Button';
+import { ContainerActions } from './ContainerActions';
 
 interface Props {
   c: Container;
 }
 
 export function ContainerRow({ c }: Props) {
-  const { start, pause, unpause, restart, kill } = useContainers();
+  const resolveProject = useContainers((s) => s.resolveProject);
+
+  useEffect(() => {
+    if (!useContainers.getState().projectFor.has(c.id)) {
+      void resolveProject(c.id);
+    }
+  }, [c.id, resolveProject]);
 
   return (
     <tr className="group hover:bg-raised/60 transition-colors duration-[var(--dur-micro)]">
@@ -55,36 +61,7 @@ export function ContainerRow({ c }: Props) {
         )}
       </td>
       <td className="pr-6 pl-3 py-3.5 align-middle">
-        <div className="flex justify-end items-center">
-          {c.state === 'running' && (
-            <>
-              <IconButton title="Pause" onClick={() => pause(c.id)}>
-                <Pause size={15} />
-              </IconButton>
-              <IconButton title="Restart" onClick={() => restart(c.id)}>
-                <RotateCw size={15} />
-              </IconButton>
-              <IconButton title="Kill" onClick={() => kill(c.id)} danger>
-                <Trash2 size={15} />
-              </IconButton>
-            </>
-          )}
-          {c.state === 'paused' && (
-            <IconButton title="Resume" onClick={() => unpause(c.id)}>
-              <Play size={15} />
-            </IconButton>
-          )}
-          {(c.state === 'exited' || c.state === 'created') && (
-            <IconButton title="Start" onClick={() => start(c.id)}>
-              <Play size={15} />
-            </IconButton>
-          )}
-          {c.state === 'restarting' && (
-            <IconButton title="Kill" onClick={() => kill(c.id)} danger>
-              <Trash2 size={15} />
-            </IconButton>
-          )}
-        </div>
+        <ContainerActions container={c} size="sm" />
       </td>
     </tr>
   );

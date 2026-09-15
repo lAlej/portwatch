@@ -7,6 +7,8 @@ import { useAuth } from '@/features/auth/store';
 import { useConnection } from '@/shared/lib/connection';
 import { getSocket } from '@/shared/lib/ws';
 import { useContainers } from '@/features/containers/store';
+import { useProjects } from '@/features/projects/store';
+import { DeployLogModal } from '@/features/projects/DeployLogModal';
 
 interface Props {
   children: ReactNode;
@@ -17,6 +19,7 @@ export function Layout({ children }: Props) {
   const logout = useAuth((s) => s.logout);
   const connected = useConnection((s) => s.connected);
   const containers = useContainers((s) => s.items);
+  const activeDeployId = useProjects((s) => s.activeDeployId);
   const running = containers.filter((c) => c.state === 'running').length;
   const loc = useLocation();
 
@@ -86,6 +89,13 @@ export function Layout({ children }: Props) {
       </main>
 
       <Footer />
+
+      {activeDeployId && (
+        <DeployLogModal
+          deploymentId={activeDeployId}
+          onClose={() => useProjects.getState().closeDeploy(activeDeployId)}
+        />
+      )}
     </div>
   );
 }

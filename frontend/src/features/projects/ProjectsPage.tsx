@@ -5,7 +5,6 @@ import type { Project } from '@/shared/lib/schemas';
 import { useProjects } from './store';
 import { AddProjectForm } from './AddProjectForm';
 import { ProjectCard } from './ProjectCard';
-import { DeployLogModal } from './DeployLogModal';
 import { EditEnvModal } from './EditEnvModal';
 
 export function ProjectsPage() {
@@ -18,30 +17,15 @@ export function ProjectsPage() {
   const remove = useProjects((s) => s.remove);
   const deploys = useProjects((s) => s.deploys);
 
-  const [activeDeployId, setActiveDeployId] = useState<string | null>(null);
   const [editingEnv, setEditingEnv] = useState<Project | null>(null);
 
   useEffect(() => {
     void fetch();
   }, [fetch]);
 
-  useEffect(() => {
-    const running = Object.values(deploys).find(
-      (d) =>
-        d.status === 'queued' ||
-        d.status === 'pulling' ||
-        d.status === 'building' ||
-        d.status === 'starting',
-    );
-    if (running && running.deploymentId !== activeDeployId) {
-      setActiveDeployId(running.deploymentId);
-    }
-  }, [deploys, activeDeployId]);
-
   const onDeploy = async (projectId: string): Promise<void> => {
     try {
-      const id = await triggerDeploy(projectId);
-      setActiveDeployId(id);
+      await triggerDeploy(projectId);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('Failed to trigger deploy', err);
@@ -115,13 +99,6 @@ export function ProjectsPage() {
           </div>
         )}
       </div>
-
-      {activeDeployId && (
-        <DeployLogModal
-          deploymentId={activeDeployId}
-          onClose={() => setActiveDeployId(null)}
-        />
-      )}
 
       {editingEnv && (
         <EditEnvModal

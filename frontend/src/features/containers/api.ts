@@ -4,6 +4,7 @@ import { ContainerSchema, type Container } from '@/shared/lib/schemas';
 
 export const ContainersResponseSchema = z.object({ containers: z.array(ContainerSchema) });
 export const InspectResponseSchema = z.object({ inspect: z.unknown() });
+const ProjectForContainerSchema = z.object({ projectId: z.string().nullable() });
 
 export const containersApi = {
   list: () => api.get('/api/containers', ContainersResponseSchema).then((r) => r.containers),
@@ -14,6 +15,8 @@ export const containersApi = {
   kill: (id: string) => api.post<{ ok: true; id: string }>(`/api/containers/${id}/kill`),
   inspect: (id: string) =>
     api.get(`/api/containers/${id}/inspect`, InspectResponseSchema).then((r) => r.inspect as Record<string, unknown>),
+  getProject: (id: string): Promise<string | null> =>
+    api.get(`/api/containers/${id}/project`, ProjectForContainerSchema).then((r) => r.projectId),
 };
 
 export type { Container };

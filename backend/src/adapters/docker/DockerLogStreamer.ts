@@ -18,18 +18,11 @@ export class DockerLogStreamer implements LogStreamer {
     opts: { tail?: number; since?: number },
     onLine: (line: LogLine) => void,
   ): () => void {
-    let streamPromise: Promise<NodeJS.ReadableStream> | null = null;
-    try {
-      streamPromise = this.docker.getContainer(id).logs({
-        follow: true,
-        stdout: true,
-        stderr: true,
-        tail: opts.tail ?? 100,
-        since: opts.since ?? 0,
-      });
-    } catch {
-      streamPromise = null;
-    }
+    let cancelled = false;
+    let currentStream: NodeJS.ReadableStream | null = null;
+    let currentStreamPromise: Promise<NodeJS.ReadableStream> | null = null;
+    let reconnectAttempts = 0;
+    let reconnectTimer: NodeJS.Timeout | null = null;
 
     const stdoutDecoder = new StringDecoder('utf8');
     const stderrDecoder = new StringDecoder('utf8');
@@ -39,8 +32,6 @@ export class DockerLogStreamer implements LogStreamer {
     let headerCarry: Buffer = Buffer.alloc(0);
     let pendingFrame: { stream: 'stdout' | 'stderr'; remaining: number; chunks: Buffer[] } | null = null;
     let detectedMuxed = false;
-    let attached = false;
-    let cancelled = false;
 
     const flushDecoderTail = (stream: 'stdout' | 'stderr') => {
       const decoder = stream === 'stdout' ? stdoutDecoder : stderrDecoder;
@@ -126,8 +117,19 @@ export class DockerLogStreamer implements LogStreamer {
       }
     };
 
+    const scheduleReconnect = (): void => {
+      if (cancelled) return;
+      if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) return;
+      const delay = Math.min(1000 * 2 ** reconnectAttempts, 5000);
+      reconnectAttempts += 1;
+      reconnectTimer = setTimeout(() => {
+        if (cancelled) return;
+        startStream();
+      }, delay);
+    };
+
     const attach = (s: NodeJS.ReadableStream) => {
-      attached = true;
+      currentStream = s;
       s.on('data', (chunk: Buffer | string) => {
         if (cancelled) return;
         const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
@@ -149,36 +151,86 @@ export class DockerLogStreamer implements LogStreamer {
       s.on('end', () => {
         flushDecoderTail('stdout');
         flushDecoderTail('stderr');
+        // Stream ended (container exited). Reset state and try to
+        // reattach so a subsequent restart keeps the log flowing.
+        currentStream = null;
+        currentStreamPromise = null;
+        headerCarry = Buffer.alloc(0);
+        pendingFrame = null;
+        detectedMuxed = false;
+        scheduleReconnect();
       });
-      s.on('error', () => undefined);
+      s.on('error', () => {
+        currentStream = null;
+        currentStreamPromise = null;
+        scheduleReconnect();
+      });
     };
 
-    if (streamPromise) {
-      streamPromise.then(attach).catch(() => undefined);
-    }
+    const startStream = (): void => {
+      if (cancelled) return;
+      let p: Promise<NodeJS.ReadableStream> | null = null;
+      try {
+        p = this.docker.getContainer(id).logs({
+          follow: true,
+          stdout: true,
+          stderr: true,
+          // On reconnect, take only the tail of the resumed container so we
+          // don't re-emit thousands of lines from before the restart.
+          tail: reconnectAttempts > 0 ? 50 : (opts.tail ?? 100),
+          since: reconnectAttempts > 0 ? Math.floor(Date.now() / 1000) - 5 : (opts.since ?? 0),
+        });
+      } catch {
+        scheduleReconnect();
+        return;
+      }
+      currentStreamPromise = p;
+      p.then(attach).catch(() => {
+        // Container not found, daemon unreachable, etc. Retry with
+        // backoff until the user closes the subscription.
+        scheduleReconnect();
+      });
+    };
+
+    startStream();
 
     return () => {
       cancelled = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
       flushDecoderTail('stdout');
       flushDecoderTail('stderr');
-      if (!attached) return;
-      try {
-        if (streamPromise) {
-          streamPromise
-            .then((s) => {
-              const maybe = s as unknown as { destroy?: () => void; end?: () => void };
-              try {
-                if (typeof maybe.destroy === 'function') maybe.destroy();
-                else if (typeof maybe.end === 'function') maybe.end();
-              } catch {
-                /* ignore */
-              }
-            })
-            .catch(() => undefined);
+      const s = currentStream;
+      const p = currentStreamPromise;
+      currentStream = null;
+      currentStreamPromise = null;
+      if (s) {
+        try {
+          const maybe = s as unknown as { destroy?: () => void; end?: () => void };
+          if (typeof maybe.destroy === 'function') maybe.destroy();
+          else if (typeof maybe.end === 'function') maybe.end();
+        } catch {
+          /* ignore */
         }
-      } catch {
-        /* ignore */
+      }
+      if (p) {
+        p.then((stream) => {
+          const maybe = stream as unknown as { destroy?: () => void; end?: () => void };
+          try {
+            if (typeof maybe.destroy === 'function') maybe.destroy();
+            else if (typeof maybe.end === 'function') maybe.end();
+          } catch {
+            /* ignore */
+          }
+        }).catch(() => undefined);
       }
     };
   }
 }
+
+// Cap retries so a missing/deleted container doesn't keep us spinning
+// forever. ~3min total (1+2+4+4+4+4+4+4 ≈ 27s with the cap at 5s) before
+// the subscription goes silent.
+const MAX_RECONNECT_ATTEMPTS = 20;

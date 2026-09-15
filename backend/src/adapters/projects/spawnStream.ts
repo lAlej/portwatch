@@ -3,10 +3,24 @@ import { spawn, type ChildProcess } from 'node:child_process';
 export type StreamKind = 'stdout' | 'stderr';
 export type Line = { line: string; stream: StreamKind };
 
+// Docker emits infrastructure-level warnings (buildx missing, deprecated
+// features, etc.) that look like errors to the user but aren't actionable
+// from this app. Filter them so the deploy log only shows what matters.
+const SUPPRESSED_PATTERNS: RegExp[] = [
+  /Docker Compose requires buildx plugin to be installed/,
+  /level=warning msg=".*buildx.*"/,
+];
+
+function shouldSuppress(line: string): boolean {
+  return SUPPRESSED_PATTERNS.some((re) => re.test(line));
+}
+
 function emitLines(chunk: string, stream: StreamKind, cb: (l: Line) => void): void {
   for (const l of chunk.split('\n')) {
     if (l.length === 0) continue;
-    cb({ line: l.replace(/\r$/, ''), stream });
+    const cleaned = l.replace(/\r$/, '');
+    if (shouldSuppress(cleaned)) continue;
+    cb({ line: cleaned, stream });
   }
 }
 

@@ -5,12 +5,14 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Cpu, MemoryStick, Network, HardDrive } from 'lucide-react';
 import { StateDot } from '@/shared/ui/Badge';
 import { containersApi } from './api';
+import { useContainers } from './store';
 import { StatsCharts } from './StatsCharts';
 import { LogTerminal } from '@/features/logs/LogTerminal';
 import type { ContainerState, ContainerStats } from '@/shared/lib/schemas';
 import { getSocket } from '@/shared/lib/ws';
 import { ContainerStatsSchema } from '@/shared/lib/schemas';
 import { formatBytes, formatBytesPerSec, formatPercent } from '@/shared/lib/format';
+import { ContainerActions } from './ContainerActions';
 
 type Tab = 'stats' | 'logs' | 'inspect';
 
@@ -21,16 +23,54 @@ export function ContainerViewPage() {
   const [state, setState] = useState<ContainerState>('unknown');
   const [inspect, setInspect] = useState<unknown>(null);
   const [lastSample, setLastSample] = useState<ContainerStats | null>(null);
+  const [logStreamNonce, setLogStreamNonce] = useState(0);
+
+  const resolveProject = useContainers((s) => s.resolveProject);
+  const container = useContainers((s) => s.items.find((c) => c.id === id));
 
   useEffect(() => {
     if (!id) return;
     void containersApi.inspect(id).then((info) => {
       const n = (info?.Name as string | undefined)?.replace(/^\//, '');
-      const st = info?.State as { Status?: string } | undefined;
       setName(n ?? id.slice(0, 12));
-      setState((st?.Status as ContainerState) ?? 'unknown');
     });
   }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    const refresh = async (): Promise<void> => {
+      try {
+        const info = await containersApi.inspect(id);
+        if (cancelled) return;
+        const nextStatus = (info?.State as { Status?: string } | undefined)?.Status;
+        if (nextStatus) {
+          setState((prev) => {
+            if (prev !== nextStatus) {
+              // Cambio de estado -> re-mount del LogTerminal via key.
+              setLogStreamNonce((n) => n + 1);
+              return nextStatus as ContainerState;
+            }
+            return prev;
+          });
+        }
+      } catch {
+        /* ignore transient failures */
+      }
+    };
+    const t = setInterval(refresh, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    if (!useContainers.getState().projectFor.has(id)) {
+      void resolveProject(id);
+    }
+  }, [id, resolveProject]);
 
   useEffect(() => {
     if (tab !== 'inspect' || !id) return;
@@ -74,19 +114,22 @@ export function ContainerViewPage() {
                 {name || id.slice(0, 12)}
               </h1>
               <StateDot state={state} />
+              <span className="inline-flex items-center gap-1.5 mono text-[11px] text-muted">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-state-running animate-pulse-live" />
+                <span className="text-state-running font-medium">live</span>
+              </span>
             </div>
             <p className="text-sm text-muted max-w-2xl">
               Live performance, network activity, block I/O, logs, and inspect data.
             </p>
           </div>
-
-          <div className="flex items-center gap-2 mono text-xs text-muted">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-state-running animate-pulse-live" />
-            <span className="text-state-running font-medium">live</span>
-            <span className="text-line">·</span>
-            <span>refreshed just now</span>
-          </div>
         </div>
+
+        {container && (
+          <div className="flex items-center gap-3 flex-wrap pt-1">
+            <ContainerActions container={container} size="md" />
+          </div>
+        )}
       </header>
 
       {/* stats strip — four equal tiles, no per-card icon-tile feature pattern */}
@@ -160,7 +203,7 @@ export function ContainerViewPage() {
       </div>
 
       {tab === 'stats' && <StatsCharts id={id} />}
-      {tab === 'logs' && <LogTerminal id={id} />}
+      {tab === 'logs' && <LogTerminal key={logStreamNonce} id={id} />}
       {tab === 'inspect' && (
         <div className="bg-panel border border-line rounded-card overflow-hidden">
           <pre className="text-xs mono text-muted whitespace-pre-wrap break-words p-4 max-h-[calc(100vh-24rem)] overflow-y-auto">

@@ -22,6 +22,7 @@ import { UnpauseContainer } from '../domain/usecases/containers/UnpauseContainer
 import { RestartContainer } from '../domain/usecases/containers/RestartContainer.js';
 import { KillContainer } from '../domain/usecases/containers/KillContainer.js';
 import { InspectContainer } from '../domain/usecases/containers/InspectContainer.js';
+import { GetProjectForContainer } from '../domain/usecases/containers/GetProjectForContainer.js';
 import { GetSystemSnapshot } from '../domain/usecases/stats/GetSystemSnapshot.js';
 import { SubscribeSystemStats } from '../domain/usecases/stats/SubscribeSystemStats.js';
 import { SubscribeContainerStats } from '../domain/usecases/stats/SubscribeContainerStats.js';
@@ -54,6 +55,7 @@ export interface AppWiring {
     restart: RestartContainer;
     kill: KillContainer;
     inspect: InspectContainer;
+    getProjectForContainer: GetProjectForContainer;
     systemSnapshot: GetSystemSnapshot;
     subscribeSystem: SubscribeSystemStats;
     subscribeContainer: SubscribeContainerStats;
@@ -123,6 +125,10 @@ export function buildApp(config: AppConfig): AppWiring {
       restart: new RestartContainer({ containerRepo, logger }),
       kill: new KillContainer({ containerRepo, logger }),
       inspect: new InspectContainer(containerRepo),
+      getProjectForContainer: new GetProjectForContainer({
+        containers: containerRepo,
+        projects,
+      }),
       systemSnapshot: new GetSystemSnapshot(systemStats),
       subscribeSystem: new SubscribeSystemStats(systemStats),
       subscribeContainer: new SubscribeContainerStats(containerStats),

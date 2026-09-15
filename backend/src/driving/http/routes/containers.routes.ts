@@ -31,17 +31,30 @@ export function containerRoutes(wiring: AppWiring): Router {
       }
     };
 
-  router.post('/:id/start', validate('params', idParam), (req, res, next) => action(wiring.useCases.start.execute)(req, res, next));
-  router.post('/:id/pause', validate('params', idParam), (req, res, next) => action(wiring.useCases.pause.execute)(req, res, next));
-  router.post('/:id/unpause', validate('params', idParam), (req, res, next) => action(wiring.useCases.unpause.execute)(req, res, next));
-  router.post('/:id/restart', validate('params', idParam), (req, res, next) => action(wiring.useCases.restart.execute)(req, res, next));
-  router.post('/:id/kill', validate('params', idParam), (req, res, next) => action(wiring.useCases.kill.execute)(req, res, next));
+  const bound = (uc: { execute: (id: string) => Promise<void> }) =>
+    action(uc.execute.bind(uc));
+
+  router.post('/:id/start', validate('params', idParam), (req, res, next) => bound(wiring.useCases.start)(req, res, next));
+  router.post('/:id/pause', validate('params', idParam), (req, res, next) => bound(wiring.useCases.pause)(req, res, next));
+  router.post('/:id/unpause', validate('params', idParam), (req, res, next) => bound(wiring.useCases.unpause)(req, res, next));
+  router.post('/:id/restart', validate('params', idParam), (req, res, next) => bound(wiring.useCases.restart)(req, res, next));
+  router.post('/:id/kill', validate('params', idParam), (req, res, next) => bound(wiring.useCases.kill)(req, res, next));
 
   router.get('/:id/inspect', validate('params', idParam), async (req, res, next) => {
     try {
       const { id } = req.params as z.infer<typeof idParam>;
       const data = await wiring.useCases.inspect.execute(id);
       res.json({ inspect: data });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.get('/:id/project', validate('params', idParam), async (req, res, next) => {
+    try {
+      const { id } = req.params as z.infer<typeof idParam>;
+      const result = await wiring.useCases.getProjectForContainer.execute({ id });
+      res.json(result);
     } catch (err) {
       next(err);
     }
