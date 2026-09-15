@@ -127,7 +127,7 @@ function LogRow({ line }: { line: LogLine }) {
   const raw = line.data.endsWith('\n') ? line.data.slice(0, -1) : line.data;
   const text = sanitize(raw);
   return (
-    <div className="flex items-start gap-3 px-1 py-0.5 rounded hover:bg-raised/50 transition-colors duration-[var(--dur-micro)]">
+    <div className="flex items-start gap-3 px-3 py-2 mb-1.5 rounded-md border border-line bg-raised hover:shadow-sm transition-shadow duration-[var(--dur-micro)]">
       <span className="shrink-0 tabular text-muted">{formatTime(line.timestamp)}</span>
       <span
         className={clsx(
