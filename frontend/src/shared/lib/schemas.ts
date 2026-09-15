@@ -77,3 +77,61 @@ export const UserSchema = z.object({
   role: z.literal('admin'),
 });
 export type User = z.infer<typeof UserSchema>;
+
+export const DeploymentStatusSchema = z.enum([
+  'queued',
+  'pulling',
+  'building',
+  'starting',
+  'success',
+  'failed',
+  'cancelled',
+]);
+export type DeploymentStatus = z.infer<typeof DeploymentStatusSchema>;
+
+export const EnvVarSchema = z.object({
+  key: z.string().min(1),
+  value: z.string(),
+});
+export type EnvVar = z.infer<typeof EnvVarSchema>;
+
+export const ProjectSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  cloneUrl: z.string(),
+  path: z.string(),
+  composeFile: z.string(),
+  hasDockerfile: z.boolean(),
+  createdAt: z.number(),
+  envVars: z.array(EnvVarSchema),
+});
+export type Project = z.infer<typeof ProjectSchema>;
+
+export const DeploymentSchema = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  status: DeploymentStatusSchema,
+  startedAt: z.number(),
+  finishedAt: z.number().nullable(),
+  exitCode: z.number().nullable(),
+  error: z.string().optional(),
+});
+export type Deployment = z.infer<typeof DeploymentSchema>;
+
+export const DeployEventSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('log'),
+    line: z.string(),
+    stream: z.enum(['stdout', 'stderr']),
+  }),
+  z.object({
+    kind: z.literal('status'),
+    status: DeploymentStatusSchema,
+  }),
+  z.object({
+    kind: z.literal('exit'),
+    exitCode: z.number(),
+    error: z.string().optional(),
+  }),
+]);
+export type DeployEvent = z.infer<typeof DeployEventSchema>;

@@ -8,6 +8,11 @@ import { DockerContainerRepository } from '../adapters/docker/DockerContainerRep
 import { DockerStatsProvider } from '../adapters/docker/DockerStatsProvider.js';
 import { DockerLogStreamer } from '../adapters/docker/DockerLogStreamer.js';
 import { SystemInfoStatsProvider } from '../adapters/system/SystemInfoStatsProvider.js';
+import { HostGit } from '../adapters/projects/HostGit.js';
+import { HostDockerComposeRunner } from '../adapters/projects/HostDockerComposeRunner.js';
+import { HostDeployRunner } from '../adapters/projects/HostDeployRunner.js';
+import { FileProjectsRepository } from '../adapters/projects/FileProjectsRepository.js';
+import { NdjsonDeploymentsRepository } from '../adapters/projects/NdjsonDeploymentsRepository.js';
 import { LoginUser } from '../domain/usecases/auth/LoginUser.js';
 import { GetCurrentUser } from '../domain/usecases/auth/GetCurrentUser.js';
 import { ListContainers } from '../domain/usecases/containers/ListContainers.js';
@@ -20,11 +25,21 @@ import { InspectContainer } from '../domain/usecases/containers/InspectContainer
 import { GetSystemSnapshot } from '../domain/usecases/stats/GetSystemSnapshot.js';
 import { SubscribeSystemStats } from '../domain/usecases/stats/SubscribeSystemStats.js';
 import { SubscribeContainerStats } from '../domain/usecases/stats/SubscribeContainerStats.js';
+import { CloneProject } from '../domain/usecases/projects/CloneProject.js';
+import { ListProjects } from '../domain/usecases/projects/ListProjects.js';
+import { DeleteProject } from '../domain/usecases/projects/DeleteProject.js';
+import { TriggerDeploy } from '../domain/usecases/projects/TriggerDeploy.js';
+import { ListDeployments } from '../domain/usecases/projects/ListDeployments.js';
+import { UpdateProjectEnv } from '../domain/usecases/projects/UpdateProjectEnv.js';
 import type { Logger } from '../domain/ports/Logger.js';
 import type { ContainerRepository } from '../domain/ports/ContainerRepository.js';
 import type { LogStreamer } from '../domain/ports/LogStreamer.js';
 import type { TokenService } from '../domain/ports/TokenService.js';
 import type { SystemStatsProvider, ContainerStatsProvider } from '../domain/ports/StatsProvider.js';
+import type { ProjectsRepository } from '../domain/ports/ProjectsRepository.js';
+import type { DeploymentsRepository } from '../domain/ports/DeploymentsRepository.js';
+import type { DeployRunner } from '../domain/ports/DeployRunner.js';
+import type { DeployPublisher } from '../domain/ports/DeployPublisher.js';
 
 export interface AppWiring {
   config: AppConfig;
@@ -42,6 +57,12 @@ export interface AppWiring {
     systemSnapshot: GetSystemSnapshot;
     subscribeSystem: SubscribeSystemStats;
     subscribeContainer: SubscribeContainerStats;
+    cloneProject: CloneProject;
+    listProjects: ListProjects;
+    deleteProject: DeleteProject;
+    triggerDeploy: TriggerDeploy;
+    listDeployments: ListDeployments;
+    updateProjectEnv: UpdateProjectEnv;
   };
   ports: {
     containerRepo: ContainerRepository;
@@ -50,7 +71,20 @@ export interface AppWiring {
     logStreamer: LogStreamer;
     tokens: TokenService;
     dockerStats: DockerStatsProvider;
+    projects: ProjectsRepository;
+    deployments: DeploymentsRepository;
+    deployRunner: DeployRunner;
+    deployPublisher: DeployPublisher;
   };
+}
+class PublisherSlot implements DeployPublisher {
+  private current: DeployPublisher = { publish: () => undefined };
+  set(p: DeployPublisher): void {
+    this.current = p;
+  }
+  publish(deploymentId: string, event: import('../domain/ports/DeployRunner.js').DeployEvent): void {
+    this.current.publish(deploymentId, event);
+  }
 }
 
 export function buildApp(config: AppConfig): AppWiring {
@@ -65,6 +99,16 @@ export function buildApp(config: AppConfig): AppWiring {
   const hasher = new BcryptPasswordHasher();
   const tokens = new JwtTokenService(config.JWT_SECRET);
   const authService = new EnvAuthService(config, hasher);
+
+  const projectsRepo = new FileProjectsRepository(config.PROJECTS_DIR);
+  const deploymentsRepo = new NdjsonDeploymentsRepository(config.PROJECTS_DIR);
+  const git = new HostGit();
+  const compose = new HostDockerComposeRunner();
+  const deployRunner: DeployRunner = new HostDeployRunner({ git, compose, logger });
+  const publisherSlot = new PublisherSlot();
+
+  const projects: ProjectsRepository = projectsRepo;
+  const deployments: DeploymentsRepository = deploymentsRepo;
 
   return {
     config,
@@ -82,6 +126,23 @@ export function buildApp(config: AppConfig): AppWiring {
       systemSnapshot: new GetSystemSnapshot(systemStats),
       subscribeSystem: new SubscribeSystemStats(systemStats),
       subscribeContainer: new SubscribeContainerStats(containerStats),
+      cloneProject: new CloneProject({
+        repo: projects,
+        git,
+        logger,
+        projectsDir: config.PROJECTS_DIR,
+      }),
+      listProjects: new ListProjects(projects),
+      deleteProject: new DeleteProject({ repo: projects, git, logger }),
+      triggerDeploy: new TriggerDeploy({
+        runner: deployRunner,
+        publisher: publisherSlot,
+        deployments,
+        projects,
+        logger,
+      }),
+      listDeployments: new ListDeployments(deployments),
+      updateProjectEnv: new UpdateProjectEnv({ repo: projects, git }),
     },
     ports: {
       containerRepo,
@@ -90,10 +151,21 @@ export function buildApp(config: AppConfig): AppWiring {
       logStreamer,
       tokens,
       dockerStats: containerStats,
+      projects,
+      deployments,
+      deployRunner,
+      deployPublisher: publisherSlot,
     },
   };
 }
 
 export function buildFromEnv(): AppWiring {
   return buildApp(loadConfig());
+}
+
+export function setDeployPublisher(
+  wiring: AppWiring,
+  publisher: DeployPublisher,
+): void {
+  (wiring.ports.deployPublisher as PublisherSlot).set(publisher);
 }

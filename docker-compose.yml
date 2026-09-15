@@ -5,7 +5,9 @@ services:
     restart: unless-stopped
     env_file: .env
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/portwatch-projects:/projects
+      - ~/.ssh:/root/.ssh:ro
     expose:
       - "4000"
 

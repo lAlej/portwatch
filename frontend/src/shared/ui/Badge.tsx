@@ -1,89 +1,84 @@
-/* Hallmark · genre: modern-minimal · state pill: ink-tinted, no chromatic floods */
+/* Hallmark · genre: modern-minimal · pill badge con tonos por semantica */
 
+import type { ReactNode } from 'react';
 import { clsx } from 'clsx';
 import type { ContainerState } from '@/shared/lib/schemas';
 
-interface StateStyle {
-  dot: string;
-  text: string;
-  pill: string;
+export type BadgeTone = 'ok' | 'warn' | 'err' | 'muted' | 'info';
+
+interface Props {
+  tone?: BadgeTone;
+  children: ReactNode;
+  className?: string;
 }
 
-const STYLE: Record<ContainerState, StateStyle> = {
-  running: {
-    dot:  'bg-state-running',
-    text: 'text-state-running',
-    pill: 'bg-state-running/10 text-state-running ring-1 ring-state-running/25',
-  },
-  paused: {
-    dot:  'bg-state-paused',
-    text: 'text-state-paused',
-    pill: 'bg-state-paused/10 text-state-paused ring-1 ring-state-paused/25',
-  },
-  restarting: {
-    dot:  'bg-state-restarting',
-    text: 'text-state-restarting',
-    pill: 'bg-state-restarting/10 text-state-restarting ring-1 ring-state-restarting/25',
-  },
-  exited: {
-    dot:  'bg-muted/60',
-    text: 'text-muted',
-    pill: 'bg-raised text-muted ring-1 ring-line',
-  },
-  created: {
-    dot:  'bg-state-restarting',
-    text: 'text-state-restarting',
-    pill: 'bg-state-restarting/10 text-state-restarting ring-1 ring-state-restarting/25',
-  },
-  dead: {
-    dot:  'bg-state-error',
-    text: 'text-state-error',
-    pill: 'bg-state-error/10 text-state-error ring-1 ring-state-error/25',
-  },
-  removing: {
-    dot:  'bg-state-error/70',
-    text: 'text-state-error',
-    pill: 'bg-state-error/10 text-state-error ring-1 ring-state-error/25',
-  },
-  unknown: {
-    dot:  'bg-muted',
-    text: 'text-muted',
-    pill: 'bg-raised text-muted ring-1 ring-line',
-  },
+const TONE_CLASSES: Record<BadgeTone, string> = {
+  ok: 'text-state-running bg-state-running/10',
+  warn: 'text-state-paused bg-state-paused/10',
+  err: 'text-state-error bg-state-error/10',
+  muted: 'text-muted bg-raised',
+  info: 'text-accent bg-accent/10',
 };
 
-interface DotProps {
-  state: ContainerState;
-  showLabel?: boolean;
-}
-
-export function StateDot({ state, showLabel = true }: DotProps) {
-  const s = STYLE[state];
-  return (
-    <span className="inline-flex items-center gap-2 text-xs">
-      <span className={clsx('inline-block h-1.5 w-1.5 rounded-full', s.dot)} />
-      {showLabel && <span className={clsx(s, 'font-medium tracking-wide')}>{state}</span>}
-    </span>
-  );
-}
-
-interface PillProps {
-  state: ContainerState;
-}
-
-export function StatePill({ state }: PillProps) {
+export function Badge({ tone = 'muted', children, className }: Props) {
   return (
     <span
       className={clsx(
-        'inline-flex items-center rounded-pill px-2.5 py-0.5 text-[11px] font-medium',
-        STYLE[state].pill,
+        'inline-flex items-center h-5 px-2 rounded-pill text-[10px] font-medium mono uppercase tracking-wide',
+        TONE_CLASSES[tone],
+        className,
       )}
     >
-      {state}
+      {children}
     </span>
   );
 }
 
-export function stateBorderClass(_state: ContainerState): string {
-  return ''; // side-stripe card removed in redesign — see design.md § anti-patterns
+const STATE_TONE: Record<ContainerState, BadgeTone> = {
+  running: 'ok',
+  paused: 'warn',
+  restarting: 'info',
+  exited: 'muted',
+  created: 'muted',
+  dead: 'err',
+  removing: 'muted',
+  unknown: 'muted',
+};
+
+const STATE_LABEL: Record<ContainerState, string> = {
+  running: 'running',
+  paused: 'paused',
+  restarting: 'restarting',
+  exited: 'exited',
+  created: 'created',
+  dead: 'dead',
+  removing: 'removing',
+  unknown: 'unknown',
+};
+
+export function StatePill({ state }: { state: ContainerState }) {
+  return <Badge tone={STATE_TONE[state]}>{STATE_LABEL[state]}</Badge>;
+}
+
+const STATE_DOT_COLOR: Record<ContainerState, string> = {
+  running: 'bg-state-running',
+  paused: 'bg-state-paused',
+  restarting: 'bg-state-paused',
+  exited: 'bg-muted',
+  created: 'bg-muted',
+  dead: 'bg-state-error',
+  removing: 'bg-muted',
+  unknown: 'bg-muted',
+};
+
+export function StateDot({ state }: { state: ContainerState }) {
+  return (
+    <span
+      aria-hidden
+      className={clsx(
+        'inline-block h-2 w-2 rounded-full',
+        STATE_DOT_COLOR[state],
+      )}
+    />
+  );
 }

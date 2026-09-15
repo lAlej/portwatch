@@ -15,7 +15,7 @@ RUN pnpm build
 
 # --- runtime ---
 FROM node:22-alpine
-RUN apk add --no-cache openssh-client git
+RUN apk add --no-cache openssh-client git docker-cli docker-cli-compose
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/dist ./dist

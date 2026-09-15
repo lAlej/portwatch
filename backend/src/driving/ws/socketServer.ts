@@ -5,7 +5,7 @@ import { UnauthorizedError } from '../../lib/errors.js';
 import type { LogLine } from '../../domain/ports/LogStreamer.js';
 
 interface SubscribePayload {
-  channel: 'system:stats' | 'container:stats' | 'container:logs';
+  channel: 'system:stats' | 'container:stats' | 'container:logs' | 'deploy';
   id?: string;
   tail?: number;
   since?: number;
@@ -67,6 +67,14 @@ export function attachSocketServer(http: HttpServer, wiring: AppWiring): IoServe
             },
           );
           cleanup.push(off);
+        } else if (payload.channel === 'deploy') {
+          const id = payload.id;
+          if (!id) throw new Error('deploy channel requires id');
+          const room = `deploy:${id}`;
+          void socket.join(room);
+          cleanup.push(() => {
+            void socket.leave(room);
+          });
         } else {
           throw new Error(`unknown channel: ${String((payload as { channel?: string }).channel)}`);
         }

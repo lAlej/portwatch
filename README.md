@@ -223,6 +223,201 @@ Frontend build arg (set in `docker-compose.yml`):
 
 ---
 
+## Projects (clone & redeploy)
+
+The dashboard can clone a Git repo into the host, and on demand run
+`git pull` + `docker compose up -d --build` on it. The UI for this is at
+`/projects`.
+
+**Flow.** Paste a clone URL (HTTPS or SSH) on `/projects`. The backend runs
+`git clone` into `${PROJECTS_DIR}/<name>`, validates the repo has a
+`Dockerfile` or `docker-compose.{yml,yaml}`, and registers it. Click
+**Pull & redeploy** on a project card to re-pull and re-up. Live stdout /
+stderr streams to a modal over Socket.IO while the deploy runs.
+
+**Where projects live on disk.** `docker-compose.yml` bind-mounts
+`/opt/portwatch-projects` from the host into the backend container at
+`/projects`. You must create this directory on the host before the first
+deploy:
+
+```bash
+sudo mkdir -p /opt/portwatch-projects
+sudo chown $USER:$USER /opt/portwatch-projects
+```
+
+**What runs what.** The backend has the Docker socket bind-mounted (`:rw`,
+no `:ro`) so it can invoke `docker compose build` and `up -d` against the
+host's engine. The new containers are siblings of the backend container,
+not children of it — Docker is a client/server protocol, the backend is
+just a client that happens to live on the same machine.
+
+**Ephemeral build containers.** When you click **Pull & deploy** and the
+project's compose file references a `Dockerfile` with multi-stage or
+non-trivial layers, you may see containers appear and disappear in
+Docker Desktop with names like `<service>-builder-<hash>` or
+`<service>-build-<hash>`. These are build-time helpers that Docker
+creates and removes automatically per stage — not your app, not a bug.
+The final running container stays.
+
+**Portwatch does not redeploy itself.** The deploy runner refuses to
+touch any project whose `name` resolves to this dashboard's own compose
+project (it isn't filtered by name today, but the operator is expected
+to keep Portwatch out of the project list — `docker compose up -d
+--build` on the dashboard's own repo would kill the running backend
+mid-deploy). To update Portwatch, `git pull` on the host and re-run
+`docker compose up -d --build` from your shell.
+
+### SSH for private repos
+
+`git clone git@github.com:...` for a private repo needs an SSH key.
+`docker-compose.yml` bind-mounts the host's `~/.ssh` into the backend
+container read-only:
+
+```yaml
+volumes:
+  - ~/.ssh:/root/.ssh:ro
+```
+
+This works out of the box if:
+
+- you have an SSH keypair on the host (`ls ~/.ssh/id_ed25519.pub`),
+- the corresponding public key is added to your GitHub account (or the
+  repo's **Deploy keys** list with read access), and
+- `github.com` is in `~/.ssh/known_hosts` (run `ssh -T git@github.com`
+  on the host once to add it).
+
+If your shell user on the host is not `root`, edit the bind mount to
+point at the right home, e.g. `/home/deploy/.ssh:/root/.ssh:ro`.
+
+#### "UNPROTECTED PRIVATE KEY FILE" error on Windows
+
+If `~/.ssh` is bind-mounted from a Windows host (NTFS), the files end
+up with mode `0777` inside the container because NTFS does not preserve
+Unix permissions. OpenSSH refuses keys in that mode:
+
+```
+Permissions 0777 for '/root/.ssh/id_ed25519' are too open.
+Load key "/root/.ssh/id_ed25519": bad permissions
+git@github.com: Permission denied (publickey).
+```
+
+The backend fixes this automatically at startup: on boot it scans
+`/root/.ssh/id_*` (excluding `.pub`) and `chmod 0600`s each file before
+the HTTP server begins accepting requests. No action needed — just
+restart the container once after pulling these changes:
+
+```bash
+docker compose up -d --build
+```
+
+If the error persists, check that the keys are actually inside the
+container:
+
+```bash
+docker exec portwatch-backend ls -la /root/.ssh/
+docker exec portwatch-backend stat -c '%a %n' /root/.ssh/id_*
+# Permissions should now read 600.
+```
+
+#### Step-by-step: adding your SSH key to GitHub
+
+You have to do this once per machine / per key you want to use. GitHub
+stores the **public** half of your key; the private half never leaves
+your host.
+
+1. **Check whether you already have a key.**
+
+   ```bash
+   ls -la ~/.ssh
+   # Look for id_ed25519 and id_ed25519.pub (or id_rsa / id_rsa.pub).
+   # If .pub exists, skip to step 3.
+   ```
+
+2. **Generate a new key (skip this if step 1 already showed a `.pub`).**
+
+   ```bash
+   ssh-keygen -t ed25519 -C "your-email@example.com"
+   # Press Enter to accept the default path (~/.ssh/id_ed25519).
+   # Set a passphrase when prompted — it encrypts the private key at rest.
+   ```
+
+3. **Copy the public key to your clipboard.**
+
+   ```bash
+   cat ~/.ssh/id_ed25519.pub
+   # macOS alternative: pbcopy < ~/.ssh/id_ed25519.pub
+   # Windows (git-bash) alternative: clip < ~/.ssh/id_ed25519.pub
+   ```
+
+   The output is one long line starting with `ssh-ed25519` and ending
+   with your email comment.
+
+4. **Add it to GitHub.**
+
+   - Go to <https://github.com/settings/keys> and click **New SSH key**.
+   - **Title**: something that identifies this host, e.g.
+     `portwatch-vps` or `home-laptop`.
+   - **Key type**: Authentication key (the default).
+   - **Key**: paste the line from step 3.
+   - Click **Add SSH key**. GitHub may ask for your password / 2FA.
+
+   For a single repo only (more secure — the key can only read that one
+   repo), use **Deploy keys** instead:
+   <https://github.com/<owner>/<repo>/settings/keys/new>. Make sure
+   **Allow write access** is unchecked unless you intend to push.
+
+5. **Verify the host trusts github.com.**
+
+   ```bash
+   ssh -T git@github.com
+   # First run: "The authenticity of host 'github.com (...)' can't be
+   # established. ... Are you sure you want to continue connecting?"
+   # Type: yes
+   # Subsequent runs: "Hi <username>! You've successfully authenticated,
+   # but GitHub does not provide shell access."
+   ```
+
+   If you see `Permission denied (publickey)`, the public key in
+   GitHub does not match the private key on disk (wrong account, wrong
+   repo, or you copied the wrong file). Re-check steps 3 and 4.
+
+6. **Redeploy Portwatch so it picks up the new mount.**
+
+   ```bash
+   cd /path/to/portwatch          # wherever you cloned it on the host
+   docker compose up -d --build
+   ```
+
+   You only need this step the first time (so the backend container
+   starts with `~/.ssh` mounted). Restarting the container later is
+   fine — the bind mount persists across restarts.
+
+7. **Clone a private repo from the UI.**
+
+   Open `https://your-domain/projects`, paste
+   `git@github.com:lAlej/yt-downloader.git`, click **Clone & add**.
+   The backend runs `git clone` using your host's SSH key. If you see
+   `Permission denied (publickey)` in the log modal, the key on the
+   host is not the one registered with GitHub — re-check steps 3-5.
+
+### Environment variables per project
+
+When adding a project you can paste a list of `KEY=value` pairs in the
+**Environment variables** section of the form. These are written to
+`<projects_dir>/<name>/.env` on the host and passed to `docker compose
+up` via `--env-file`. Edit them anytime from the project card (key icon);
+changes take effect on the next deploy.
+
+The values are stored in plaintext at the filesystem-permission level
+of the bind mount (whatever umask gives, usually readable by the
+container user — `root` inside the backend container, by default).
+Anyone with read access to `/opt/portwatch-projects/<name>/.env` on the
+host sees the values. If you need stricter perms, tighten them with a
+post-deploy hook or wrap the backend in a secret-manager integration
+(out of scope for v1).
+
+---
+
 ## Verification
 
 Both projects typecheck and build cleanly:

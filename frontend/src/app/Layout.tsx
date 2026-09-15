@@ -55,6 +55,7 @@ export function Layout({ children }: Props) {
 
           <div className="flex items-center gap-1 text-sm">
             <NavTab to="/" label="Containers" active={loc.pathname === '/'} />
+            <NavTab to="/projects" label="Projects" active={loc.pathname.startsWith('/projects')} />
           </div>
 
           <div className="ml-auto flex items-center gap-3 pr-2 text-sm">

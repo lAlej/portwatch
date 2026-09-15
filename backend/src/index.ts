@@ -1,13 +1,17 @@
 import http from 'node:http';
-import { buildFromEnv } from './composition/container.js';
+import { buildFromEnv, setDeployPublisher } from './composition/container.js';
 import { buildHttpServer } from './driving/http/server.js';
 import { attachSocketServer } from './driving/ws/socketServer.js';
+import { SocketIoDeployPublisher } from './adapters/projects/SocketIoDeployPublisher.js';
+import { fixSshKeyPermissions } from './adapters/projects/HostGit.js';
 
 async function main(): Promise<void> {
   const wiring = buildFromEnv();
+  await fixSshKeyPermissions(wiring.logger);
   const app = buildHttpServer(wiring);
   const server = http.createServer(app);
-  attachSocketServer(server, wiring);
+  const io = attachSocketServer(server, wiring);
+  setDeployPublisher(wiring, new SocketIoDeployPublisher(io));
 
   const port = wiring.config.PORT;
   server.listen(port, () => {

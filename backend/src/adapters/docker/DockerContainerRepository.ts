@@ -7,19 +7,8 @@ import type {
 } from '../../domain/entities/Container.js';
 import { NotFoundError, InvalidStateError, DockerUnavailableError } from '../../lib/errors.js';
 
-/**
- * Compose project name de este stack. Los containers que pertenezcan a este
- * project se ocultan del dashboard para que un click accidental en Kill no
- * tumbe el propio Portwatch. Si renombras el directorio del repo o usas
- * `docker compose -p otro-nombre`, actualiza este constante.
- */
 const SELF_COMPOSE_PROJECT = 'portwatch';
 
-/**
- * Devuelve true si el container pertenece al propio stack de Portwatch y
- * debe ocultarse del listado. Containers sin label de compose (lanzados
- * con `docker run`) nunca se ocultan.
- */
 function isSelfComposeProject(project: string | undefined): boolean {
   return project !== undefined && project === SELF_COMPOSE_PROJECT;
 }

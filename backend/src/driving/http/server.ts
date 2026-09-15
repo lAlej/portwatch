@@ -8,6 +8,7 @@ import type { AppWiring } from '../../composition/container.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { containerRoutes } from './routes/containers.routes.js';
 import { systemRoutes } from './routes/system.routes.js';
+import { projectRoutes } from './routes/projects.routes.js';
 import { errorHandler } from './middleware/error.js';
 
 export function buildHttpServer(wiring: AppWiring): Express {
@@ -36,6 +37,7 @@ export function buildHttpServer(wiring: AppWiring): Express {
   app.use('/api/auth', authRoutes(wiring));
   app.use('/api/containers', containerRoutes(wiring));
   app.use('/api/system', systemRoutes(wiring));
+  app.use('/api/projects', projectRoutes(wiring));
 
   app.use(errorHandler);
   return app;

@@ -24,6 +24,8 @@ const envSchema = z.object({
 
   STATS_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
   LOG_BUFFER: z.coerce.number().int().positive().default(2000),
+
+  PROJECTS_DIR: z.string().min(1).default('/projects'),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

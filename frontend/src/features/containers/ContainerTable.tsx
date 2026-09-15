@@ -35,10 +35,6 @@ interface ProjectGroup {
   running: number;
 }
 
-/**
- * Agrupa containers por `com.docker.compose.project`. Containers sin label de
- * compose caen en un grupo `standalone` que se renderiza al final.
- */
 function groupByProject(items: ContainerType[]): ProjectGroup[] {
   const groups = new Map<string, ContainerType[]>();
   for (const c of items) {
@@ -60,7 +56,6 @@ function groupByProject(items: ContainerType[]): ProjectGroup[] {
     });
   }
 
-  // Proyectos compose primero (alfabético), standalone al final.
   result.sort((a, b) => {
     if (a.isStandalone !== b.isStandalone) return a.isStandalone ? 1 : -1;
     return a.project.localeCompare(b.project);

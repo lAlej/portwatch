@@ -4,6 +4,7 @@ import { useAuth } from '@/features/auth/store';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { DashboardPage } from '@/features/containers/DashboardPage';
 import { ContainerViewPage } from '@/features/containers/ContainerViewPage';
+import { ProjectsPage } from '@/features/projects/ProjectsPage';
 import { Layout } from './Layout';
 import { Spinner } from '@/shared/ui/Spinner';
 
@@ -45,6 +46,14 @@ export function App() {
           element={
             <RequireAuth>
               <ContainerViewPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/projects"
+          element={
+            <RequireAuth>
+              <ProjectsPage />
             </RequireAuth>
           }
         />
