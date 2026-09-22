@@ -40,22 +40,47 @@ export function attachSocketServer(http: HttpServer, wiring: AppWiring): IoServe
 
   io.on('connection', (raw) => {
     const socket = raw as AuthedSocket;
-    const cleanup: Array<() => void> = [];
+    // Lookup por clave estable en lugar de comparar el source del closure
+    // con un literal — `fn.toString()` nunca contiene el id, así que el
+    // `findIndex` previo devolvía -1 y los unsubscribe no cerraban streams.
+    // Re-suscribir al mismo canal reabre el stream sin liberar el anterior,
+    // y cada línea se emitía N veces al cliente (N = mounts acumulados).
+    const subs = new Map<string, () => void>();
+
+    const release = (key: string): void => {
+      const fn = subs.get(key);
+      if (!fn) return;
+      subs.delete(key);
+      try {
+        fn();
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const subscribeKey = (p: SubscribePayload): string =>
+      p.id ? `${p.channel}:${p.id}` : p.channel;
 
     socket.on('subscribe', (payload: SubscribePayload) => {
       try {
+        const key = subscribeKey(payload);
+        // Idempotente: si ya hay una suscripción viva para esta clave,
+        // liberamos la anterior antes de crear la nueva para no duplicar
+        // streams en cada re-mount de LogTerminal / StrictMode.
+        if (subs.has(key)) release(key);
+
         if (payload.channel === 'system:stats') {
           const unsub = wiring.useCases.subscribeSystem.execute((sample) => {
             socket.emit('system:stats', sample);
           });
-          cleanup.push(unsub);
+          subs.set(key, unsub);
         } else if (payload.channel === 'container:stats') {
           const id = payload.id;
           if (!id) throw new Error('container:stats requires id');
           const unsub = wiring.useCases.subscribeContainer.execute(id, (sample) => {
             socket.emit(`container:stats:${id}`, sample);
           });
-          cleanup.push(unsub);
+          subs.set(key, unsub);
         } else if (payload.channel === 'container:logs') {
           const id = payload.id;
           if (!id) throw new Error('container:logs requires id');
@@ -66,13 +91,13 @@ export function attachSocketServer(http: HttpServer, wiring: AppWiring): IoServe
               socket.emit(`container:logs:${id}`, line);
             },
           );
-          cleanup.push(off);
+          subs.set(key, off);
         } else if (payload.channel === 'deploy') {
           const id = payload.id;
           if (!id) throw new Error('deploy channel requires id');
           const room = `deploy:${id}`;
           void socket.join(room);
-          cleanup.push(() => {
+          subs.set(key, () => {
             void socket.leave(room);
           });
         } else {
@@ -85,26 +110,18 @@ export function attachSocketServer(http: HttpServer, wiring: AppWiring): IoServe
     });
 
     socket.on('unsubscribe', (payload: SubscribePayload) => {
-      const tag = payload.id ? `${payload.channel}:${payload.id}` : payload.channel;
-      const idx = cleanup.findIndex((fn) => fn.toString().includes(tag));
-      if (idx >= 0) {
-        try {
-          cleanup[idx]?.();
-        } catch {
-          /* ignore */
-        }
-        cleanup.splice(idx, 1);
-      }
+      release(subscribeKey(payload));
     });
 
     socket.on('disconnect', () => {
-      while (cleanup.length) {
+      for (const fn of subs.values()) {
         try {
-          cleanup.pop()?.();
+          fn();
         } catch {
           /* ignore */
         }
       }
+      subs.clear();
     });
   });
 
