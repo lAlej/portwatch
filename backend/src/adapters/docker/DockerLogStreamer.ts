@@ -9,6 +9,14 @@ interface Frame {
 
 const FRAME_HEADER = 8;
 const MAX_FRAME_SIZE = 16 * 1024 * 1024;
+const LINE_TS_RE = /^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z)\]/;
+
+function parseLineTimestamp(line: string, fallback: number): number {
+  const m = LINE_TS_RE.exec(line);
+  if (!m || m[1] === undefined) return fallback;
+  const ms = Date.parse(m[1]);
+  return Number.isFinite(ms) ? ms : fallback;
+}
 
 export class DockerLogStreamer implements LogStreamer {
   constructor(private readonly docker: Dockerode) {}
@@ -38,7 +46,8 @@ export class DockerLogStreamer implements LogStreamer {
       const text = decoder.end();
       const tail = (stream === 'stdout' ? stdoutTail : stderrTail) + text;
       if (tail.length > 0) {
-        onLine({ id, stream, data: tail + '\n', timestamp: Date.now() });
+        const now = Date.now();
+        onLine({ id, stream, data: tail + '\n', timestamp: parseLineTimestamp(tail, now) });
       }
       if (stream === 'stdout') stdoutTail = '';
       else stderrTail = '';
@@ -53,10 +62,10 @@ export class DockerLogStreamer implements LogStreamer {
       if (frame.stream === 'stdout') stdoutTail = tail;
       else stderrTail = tail;
 
-      const ts = Date.now();
+      const now = Date.now();
       for (const line of lines) {
         if (line.length === 0) continue;
-        onLine({ id, stream: frame.stream, data: line + '\n', timestamp: ts });
+        onLine({ id, stream: frame.stream, data: line + '\n', timestamp: parseLineTimestamp(line, now) });
       }
     };
 
@@ -110,10 +119,10 @@ export class DockerLogStreamer implements LogStreamer {
       const combined = stdoutTail + text;
       const lines = combined.split(/\r?\n/);
       stdoutTail = lines.pop() ?? '';
-      const ts = Date.now();
+      const now = Date.now();
       for (const line of lines) {
         if (line.length === 0) continue;
-        onLine({ id, stream: 'stdout', data: line + '\n', timestamp: ts });
+        onLine({ id, stream: 'stdout', data: line + '\n', timestamp: parseLineTimestamp(line, now) });
       }
     };
 
