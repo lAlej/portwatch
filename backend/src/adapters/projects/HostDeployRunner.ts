@@ -18,40 +18,49 @@ export class HostDeployRunner implements DeployRunner {
   async *run(project: Project, deployment: Deployment): AsyncIterable<DeployEvent> {
     const projectName = sanitizeProjectName(project.name);
     const composeFile = project.composeFile;
+    const isAdHoc = project.cloneUrl === '';
 
-    // Step 1: git pull.
-    yield { kind: 'status', status: 'pulling' };
-    try {
-      for await (const line of this.deps.git.pull(project.path)) {
-        yield { kind: 'log', line: line.line, stream: line.stream };
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'git pull failed';
-      this.deps.logger.warn('git pull failed (continuing)', { project: project.name, error: msg });
-      yield { kind: 'log', line: `warn: ${msg}`, stream: 'stderr' };
-    }
-
-    // Step 2: docker compose build --pull.
-    if (composeFile) {
-      yield { kind: 'status', status: 'building' };
-      let buildCode = 0;
+    if (isAdHoc) {
+      yield { kind: 'status', status: 'pulling' };
+      yield { kind: 'log', line: 'Ad-hoc project (no git): skipping git pull.', stream: 'stdout' };
+    } else {
+      yield { kind: 'status', status: 'pulling' };
       try {
-        for await (const line of this.deps.compose.build(project.path, composeFile, projectName)) {
+        for await (const line of this.deps.git.pull(project.path)) {
           yield { kind: 'log', line: line.line, stream: line.stream };
         }
       } catch (err) {
-        buildCode = 1;
-        const msg = err instanceof Error ? err.message : 'compose build failed';
-        yield { kind: 'log', line: `error: ${msg}`, stream: 'stderr' };
-        yield { kind: 'exit', exitCode: buildCode, error: msg };
-        return;
+        const msg = err instanceof Error ? err.message : 'git pull failed';
+        this.deps.logger.warn('git pull failed (continuing)', { project: project.name, error: msg });
+        yield { kind: 'log', line: `warn: ${msg}`, stream: 'stderr' };
       }
-      if (buildCode !== 0) {
-        yield { kind: 'exit', exitCode: buildCode, error: 'compose build failed' };
-        return;
+    }
+
+    if (composeFile) {
+      if (isAdHoc) {
+        // ad-hoc projects use prebuilt images — skip the build step.
+        yield { kind: 'status', status: 'building' };
+        yield { kind: 'log', line: 'Ad-hoc project (no source): skipping docker compose build.', stream: 'stdout' };
+      } else {
+        yield { kind: 'status', status: 'building' };
+        let buildCode = 0;
+        try {
+          for await (const line of this.deps.compose.build(project.path, composeFile, projectName)) {
+            yield { kind: 'log', line: line.line, stream: line.stream };
+          }
+        } catch (err) {
+          buildCode = 1;
+          const msg = err instanceof Error ? err.message : 'compose build failed';
+          yield { kind: 'log', line: `error: ${msg}`, stream: 'stderr' };
+          yield { kind: 'exit', exitCode: buildCode, error: msg };
+          return;
+        }
+        if (buildCode !== 0) {
+          yield { kind: 'exit', exitCode: buildCode, error: 'compose build failed' };
+          return;
+        }
       }
 
-      // Step 3: docker compose up -d.
       yield { kind: 'status', status: 'starting' };
       try {
         for await (const line of this.deps.compose.up(project.path, composeFile, projectName)) {

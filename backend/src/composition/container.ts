@@ -32,6 +32,9 @@ import { DeleteProject } from '../domain/usecases/projects/DeleteProject.js';
 import { TriggerDeploy } from '../domain/usecases/projects/TriggerDeploy.js';
 import { ListDeployments } from '../domain/usecases/projects/ListDeployments.js';
 import { UpdateProjectEnv } from '../domain/usecases/projects/UpdateProjectEnv.js';
+import { GetProjectCompose } from '../domain/usecases/projects/GetProjectCompose.js';
+import { UpdateProjectCompose } from '../domain/usecases/projects/UpdateProjectCompose.js';
+import { CreateAdHocComposeProject } from '../domain/usecases/projects/CreateAdHocComposeProject.js';
 import type { Logger } from '../domain/ports/Logger.js';
 import type { ContainerRepository } from '../domain/ports/ContainerRepository.js';
 import type { LogStreamer } from '../domain/ports/LogStreamer.js';
@@ -65,6 +68,9 @@ export interface AppWiring {
     triggerDeploy: TriggerDeploy;
     listDeployments: ListDeployments;
     updateProjectEnv: UpdateProjectEnv;
+    getProjectCompose: GetProjectCompose;
+    updateProjectCompose: UpdateProjectCompose;
+    createAdHocComposeProject: CreateAdHocComposeProject;
   };
   ports: {
     containerRepo: ContainerRepository;
@@ -80,12 +86,18 @@ export interface AppWiring {
   };
 }
 class PublisherSlot implements DeployPublisher {
-  private current: DeployPublisher = { publish: () => undefined };
+  private current: DeployPublisher = {
+    publish: () => undefined,
+    notifyContainersChanged: () => undefined,
+  };
   set(p: DeployPublisher): void {
     this.current = p;
   }
   publish(deploymentId: string, event: import('../domain/ports/DeployRunner.js').DeployEvent): void {
     this.current.publish(deploymentId, event);
+  }
+  notifyContainersChanged(): void {
+    this.current.notifyContainersChanged();
   }
 }
 
@@ -149,6 +161,18 @@ export function buildApp(config: AppConfig): AppWiring {
       }),
       listDeployments: new ListDeployments(deployments),
       updateProjectEnv: new UpdateProjectEnv({ repo: projects, git }),
+      getProjectCompose: new GetProjectCompose({ repo: projects }),
+      updateProjectCompose: new UpdateProjectCompose({
+              repo: projects,
+              compose,
+              publisher: publisherSlot,
+              logger,
+            }),
+      createAdHocComposeProject: new CreateAdHocComposeProject({
+        repo: projects,
+        logger,
+        projectsDir: config.PROJECTS_DIR,
+      }),
     },
     ports: {
       containerRepo,

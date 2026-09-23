@@ -1,6 +1,6 @@
 /* Hallmark · genre: modern-minimal · action strip: icon buttons in a row */
 
-import { Play, RotateCw, Hammer, Pause, Trash2 } from 'lucide-react';
+import { FileText, Play, RotateCw, Hammer, Pause, Trash2 } from 'lucide-react';
 import type { Container } from '@/shared/lib/schemas';
 import { useContainers } from './store';
 import { useProjects } from '@/features/projects/store';
@@ -9,9 +9,10 @@ import { IconButton } from '@/shared/ui/Button';
 interface Props {
   container: Container;
   size?: 'sm' | 'md';
+  onEditCompose?: () => void;
 }
 
-export function ContainerActions({ container: c, size = 'sm' }: Props) {
+export function ContainerActions({ container: c, size = 'sm', onEditCompose }: Props) {
   const { start, pause, unpause, restart, kill } = useContainers();
   const triggerDeploy = useProjects((s) => s.triggerDeploy);
   const activeDeployId = useProjects((s) => s.activeDeployId);
@@ -88,6 +89,17 @@ export function ContainerActions({ container: c, size = 'sm' }: Props) {
 
   return (
     <div className={wrapperClass}>
+      {onEditCompose && (
+        <Md
+          onClick={onEditCompose}
+          disabled={anyDeployRunning}
+          title="Edit compose file"
+        >
+          <FileText size={size === 'md' ? 12 : 15} />
+          {size === 'md' && <span>Edit compose</span>}
+        </Md>
+      )}
+
       {/* "Rebuild & up" */}
       {projectId !== undefined && projectId !== null && (
         <Md

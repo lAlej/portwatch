@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Container } from '@/shared/lib/schemas';
+import { getSocket } from '@/shared/lib/ws';
 import { containersApi } from './api';
 
 interface ContainersState {
@@ -15,6 +16,22 @@ interface ContainersState {
   kill: (id: string) => Promise<void>;
   refreshOne: (id: string) => Promise<void>;
   resolveProject: (id: string) => Promise<string | null>;
+}
+
+// Subscribes to the global `containers:changed` event the backend emits
+// after deploys / edit compose. Layout calls this on mount to re-fetch
+// the list when a recreate happens.
+export function subscribeToContainerChanges(
+  fetch: () => Promise<void>,
+): () => void {
+  const socket = getSocket();
+  const handler = (): void => {
+    void fetch();
+  };
+  socket.on('containers:changed', handler);
+  return () => {
+    socket.off('containers:changed', handler);
+  };
 }
 
 async function refreshAfter(act: () => Promise<unknown>): Promise<void> {

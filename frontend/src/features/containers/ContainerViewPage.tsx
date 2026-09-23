@@ -13,6 +13,7 @@ import { getSocket } from '@/shared/lib/ws';
 import { ContainerStatsSchema } from '@/shared/lib/schemas';
 import { formatBytes, formatBytesPerSec, formatPercent } from '@/shared/lib/format';
 import { ContainerActions } from './ContainerActions';
+import { EditComposeModal } from '@/features/projects/EditComposeModal';
 
 type Tab = 'stats' | 'logs' | 'inspect';
 
@@ -24,9 +25,11 @@ export function ContainerViewPage() {
   const [inspect, setInspect] = useState<unknown>(null);
   const [lastSample, setLastSample] = useState<ContainerStats | null>(null);
   const [logStreamNonce, setLogStreamNonce] = useState(0);
+  const [editComposeOpen, setEditComposeOpen] = useState(false);
 
   const resolveProject = useContainers((s) => s.resolveProject);
   const container = useContainers((s) => s.items.find((c) => c.id === id));
+  const projectId = useContainers((s) => s.projectFor.get(id) ?? undefined);
 
   useEffect(() => {
     if (!id) return;
@@ -47,7 +50,7 @@ export function ContainerViewPage() {
         if (nextStatus) {
           setState((prev) => {
             if (prev !== nextStatus) {
-              // Cambio de estado -> re-mount del LogTerminal via key.
+              // State change -> force LogTerminal to re-subscribe.
               setLogStreamNonce((n) => n + 1);
               return nextStatus as ContainerState;
             }
@@ -127,7 +130,15 @@ export function ContainerViewPage() {
 
         {container && (
           <div className="flex items-center gap-3 flex-wrap pt-1">
-            <ContainerActions container={container} size="md" />
+            <ContainerActions
+              container={container}
+              size="md"
+              onEditCompose={
+                projectId
+                  ? (): void => setEditComposeOpen(true)
+                  : undefined
+              }
+            />
           </div>
         )}
       </header>
@@ -210,6 +221,15 @@ export function ContainerViewPage() {
             {inspect ? JSON.stringify(inspect, null, 2) : 'Loading…'}
           </pre>
         </div>
+      )}
+
+      {editComposeOpen && projectId && (
+        <EditComposeModal
+          projectId={projectId}
+          composeFile="docker-compose.yml"
+          label={name || id.slice(0, 12)}
+          onClose={(): void => setEditComposeOpen(false)}
+        />
       )}
     </div>
   );

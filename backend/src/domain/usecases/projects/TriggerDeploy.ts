@@ -81,6 +81,9 @@ export class TriggerDeploy {
             exitCode: event.exitCode,
             status: finalStatus,
           });
+          // docker compose has already created / recreated / removed
+          // containers per the compose file. Frontend list is stale.
+          this.deps.publisher.notifyContainersChanged();
         }
       }
     } catch (err) {
@@ -90,6 +93,7 @@ export class TriggerDeploy {
       this.deps.publisher.publish(current.id, { kind: 'status', status: 'failed' });
       this.deps.publisher.publish(current.id, { kind: 'exit', exitCode: 1, error: msg });
       this.deps.logger.error('deploy crashed', { deploymentId: deployment.id, error: msg });
+      this.deps.publisher.notifyContainersChanged();
     }
   }
 }

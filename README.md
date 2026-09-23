@@ -225,20 +225,36 @@ Frontend build arg (set in `docker-compose.yml`):
 
 ## Projects (clone & redeploy)
 
-The dashboard can clone a Git repo into the host, and on demand run
-`git pull` + `docker compose up -d --build` on it. The UI for this is at
-`/projects`.
+The dashboard can register a project in two ways: clone a Git repo, or paste
+a `docker-compose.yml` directly. Both end up as a managed project that can
+be re-deployed on demand. The UI is at `/projects`.
 
-**Flow.** Paste a clone URL (HTTPS or SSH) on `/projects`. The backend runs
+### Clone a repo
+
+Paste a clone URL (HTTPS or SSH) on `/projects`. The backend runs
 `git clone` into `${PROJECTS_DIR}/<name>`, validates the repo has a
 `Dockerfile` or `docker-compose.{yml,yaml}`, and registers it. Click
 **Pull & redeploy** on a project card to re-pull and re-up. Live stdout /
 stderr streams to a modal over Socket.IO while the deploy runs.
 
-**Where projects live on disk.** `docker-compose.yml` bind-mounts
-`/opt/portwatch-projects` from the host into the backend container at
-`/projects`. You must create this directory on the host before the first
-deploy:
+### Paste a compose file (ad-hoc)
+
+For services that don't live in a repo (or where cloning is wasted work —
+a public image with no build, a config-only service), toggle the card to
+**Paste a compose file instead**, give the project a name, paste the
+compose YAML, optionally add env vars, and click **Create & start**. The
+backend writes `${PROJECTS_DIR}/<name>/docker-compose.yml` (and `.env` if
+env vars were added) and registers a `Project` with `cloneUrl` empty.
+
+On start the deploy runner skips `git pull` and `docker compose build`
+(there's no source and the image is prebuilt) and goes straight to
+`docker compose up -d --remove-orphans`. Docker Compose stamps the
+resulting containers with `com.docker.compose.project=<sanitized-name>`,
+so the dashboard automatically resolves them and the container detail
+page shows **Edit compose** — same flow as a cloned project, no extra
+wiring.
+
+### Where projects live on disk
 
 ```bash
 sudo mkdir -p /opt/portwatch-projects

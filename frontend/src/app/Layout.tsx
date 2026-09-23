@@ -6,7 +6,7 @@ import { LogOut } from 'lucide-react';
 import { useAuth } from '@/features/auth/store';
 import { useConnection } from '@/shared/lib/connection';
 import { getSocket } from '@/shared/lib/ws';
-import { useContainers } from '@/features/containers/store';
+import { useContainers, subscribeToContainerChanges } from '@/features/containers/store';
 import { useProjects } from '@/features/projects/store';
 import { DeployLogModal } from '@/features/projects/DeployLogModal';
 
@@ -19,6 +19,7 @@ export function Layout({ children }: Props) {
   const logout = useAuth((s) => s.logout);
   const connected = useConnection((s) => s.connected);
   const containers = useContainers((s) => s.items);
+  const fetchContainers = useContainers((s) => s.fetch);
   const activeDeployId = useProjects((s) => s.activeDeployId);
   const running = containers.filter((c) => c.state === 'running').length;
   const loc = useLocation();
@@ -26,6 +27,12 @@ export function Layout({ children }: Props) {
   useEffect(() => {
     getSocket();
   }, []);
+
+  // Re-fetch the container list when the backend signals a recreate.
+  useEffect(() => {
+    const unsub = subscribeToContainerChanges(fetchContainers);
+    return unsub;
+  }, [fetchContainers]);
 
   const onLogout = async () => {
     await logout();

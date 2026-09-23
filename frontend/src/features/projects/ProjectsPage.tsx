@@ -4,8 +4,11 @@ import { Spinner } from '@/shared/ui/Spinner';
 import type { Project } from '@/shared/lib/schemas';
 import { useProjects } from './store';
 import { AddProjectForm } from './AddProjectForm';
+import { AddComposeProjectForm } from './AddComposeProjectForm';
 import { ProjectCard } from './ProjectCard';
 import { EditEnvModal } from './EditEnvModal';
+
+type Mode = 'clone' | 'compose';
 
 export function ProjectsPage() {
   const items = useProjects((s) => s.items);
@@ -18,6 +21,7 @@ export function ProjectsPage() {
   const deploys = useProjects((s) => s.deploys);
 
   const [editingEnv, setEditingEnv] = useState<Project | null>(null);
+  const [mode, setMode] = useState<Mode>('clone');
 
   useEffect(() => {
     void fetch();
@@ -50,13 +54,34 @@ export function ProjectsPage() {
           Projects
         </h1>
         <p className="text-sm text-muted mt-1">
-          Clone a repo, then pull & deploy with one click.
+          Clone a repo or paste a docker-compose file. Both end up as a managed project.
         </p>
       </header>
 
       <div className="reveal" style={{ ['--i' as string]: 1 }}>
         <Card>
-          <AddProjectForm />
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-ink">
+              {mode === 'clone' ? 'Clone a repo' : 'Paste a compose file'}
+            </h2>
+            <button
+              type="button"
+              onClick={(): void => setMode(mode === 'clone' ? 'compose' : 'clone')}
+              className="
+                text-xs text-accent hover:text-accent-soft
+                transition-colors duration-[var(--dur-micro)]
+              "
+            >
+              {mode === 'clone'
+                ? 'Or paste a compose file instead →'
+                : '← Or clone a repo instead'}
+            </button>
+          </div>
+          {mode === 'clone' ? (
+            <AddProjectForm />
+          ) : (
+            <AddComposeProjectForm onCreated={(): void => setMode('clone')} />
+          )}
         </Card>
       </div>
 
@@ -73,7 +98,7 @@ export function ProjectsPage() {
         ) : items.length === 0 ? (
           <Card>
             <p className="text-sm text-muted">
-              No projects yet. Paste a clone URL above to add one.
+              No projects yet. Clone a repo or paste a compose file above to add one.
             </p>
           </Card>
         ) : (

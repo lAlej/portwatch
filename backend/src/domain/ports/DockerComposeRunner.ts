@@ -9,4 +9,11 @@ export interface DockerComposeRunner {
     composeFile: string,
     projectName: string,
   ): AsyncIterable<{ line: string; stream: 'stdout' | 'stderr' }>;
+  // `up` with `--force-recreate` so config changes (ports, env,
+  // network_mode, depends_on, etc.) apply without rebuilding images.
+  upForceRecreate(
+    cwd: string,
+    composeFile: string,
+    projectName: string,
+  ): AsyncIterable<{ line: string; stream: 'stdout' | 'stderr' }>;
 }

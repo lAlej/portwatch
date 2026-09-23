@@ -30,14 +30,27 @@ interface ProjectsState {
   lastStatusByProject: Record<string, DeploymentStatus | undefined>;
   deploys: Record<string, DeployState>;
   activeDeployId: string | null;
+  composeCache: Record<string, { relPath: string; content: string } | undefined>;
+  composeLoading: Record<string, boolean>;
   fetch: () => Promise<void>;
   add: (cloneUrl: string, envVars: EnvVar[]) => Promise<Project>;
+  createAdHoc: (
+    name: string,
+    composeContent: string,
+    envVars: EnvVar[],
+  ) => Promise<Project>;
   updateEnv: (id: string, envVars: EnvVar[]) => Promise<void>;
   remove: (id: string) => Promise<void>;
   triggerDeploy: (projectId: string) => Promise<string>;
   openDeploy: (deploymentId: string) => void;
   subscribeDeploy: (deploymentId: string, projectId: string) => () => void;
   closeDeploy: (deploymentId: string) => void;
+  loadCompose: (id: string, relPath?: string) => Promise<{ relPath: string; content: string }>;
+  saveCompose: (
+    id: string,
+    content: string,
+    relPath?: string,
+  ) => Promise<{ exitCode: number; error?: string }>;
 }
 
 function emptyDeployState(deploymentId: string, projectId: string): DeployState {
@@ -51,13 +64,15 @@ function emptyDeployState(deploymentId: string, projectId: string): DeployState 
   };
 }
 
-export const useProjects = create<ProjectsState>((set) => ({
+export const useProjects = create<ProjectsState>((set, get) => ({
   items: [],
   loading: false,
   error: null,
   lastStatusByProject: {},
   deploys: {},
   activeDeployId: null,
+  composeCache: {},
+  composeLoading: {},
 
   fetch: async () => {
     set({ loading: true, error: null });
@@ -86,6 +101,12 @@ export const useProjects = create<ProjectsState>((set) => ({
 
   add: async (cloneUrl: string, envVars: EnvVar[]) => {
     const project = await projectsApi.clone(cloneUrl, envVars);
+    set((s) => ({ items: [project, ...s.items] }));
+    return project;
+  },
+
+  createAdHoc: async (name, composeContent, envVars) => {
+    const project = await projectsApi.createAdHoc({ name, composeContent, envVars });
     set((s) => ({ items: [project, ...s.items] }));
     return project;
   },
@@ -164,5 +185,44 @@ export const useProjects = create<ProjectsState>((set) => ({
       const activeDeployId = s.activeDeployId === deploymentId ? null : s.activeDeployId;
       return { deploys: next, activeDeployId };
     });
+  },
+
+  // Fetches the compose file unless we already have the same relPath cached.
+  loadCompose: async (id, relPath) => {
+    const cached = get().composeCache[id];
+    if (cached && (relPath === undefined || cached.relPath === relPath)) {
+      return cached;
+    }
+    set((s) => ({ composeLoading: { ...s.composeLoading, [id]: true } }));
+    try {
+      const compose = await projectsApi.getCompose(id, relPath);
+      set((s) => ({
+        composeCache: { ...s.composeCache, [id]: compose },
+        composeLoading: { ...s.composeLoading, [id]: false },
+      }));
+      return compose;
+    } catch (err) {
+      set((s) => ({
+        composeLoading: { ...s.composeLoading, [id]: false },
+      }));
+      throw err;
+    }
+  },
+
+  // Saves the compose file (backend recreates containers on success)
+  // and refreshes the cache to the persisted version.
+  saveCompose: async (id, content, relPath) => {
+    const result = await projectsApi.updateCompose(id, content, relPath);
+    if (result.exitCode === 0) {
+      const cached = get().composeCache[id];
+      const finalRel = relPath ?? cached?.relPath ?? '';
+      set((s) => ({
+        composeCache: {
+          ...s.composeCache,
+          [id]: { relPath: finalRel, content },
+        },
+      }));
+    }
+    return result;
   },
 }));

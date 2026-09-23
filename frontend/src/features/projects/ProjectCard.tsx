@@ -68,7 +68,9 @@ export function ProjectCard({
             </span>
           )}
         </div>
-        <p className="text-xs text-muted mono break-all">{project.cloneUrl}</p>
+        <p className="text-xs text-muted mono break-all">
+          {project.cloneUrl || 'ad-hoc compose (no repo)'}
+        </p>
         <p className="text-xs text-muted mono mt-0.5">
           {project.composeFile
             ? `compose: ${project.composeFile}`
@@ -85,7 +87,11 @@ export function ProjectCard({
           disabled={deploying}
         >
           <RotateCw size={12} className={deploying ? 'animate-spin' : ''} />
-          {deploying ? 'Deploying…' : 'Pull & deploy'}
+          {deploying
+            ? 'Deploying…'
+            : project.cloneUrl
+              ? 'Pull & deploy'
+              : 'Start'}
         </Button>
         <IconButton
           onClick={onEditEnv}

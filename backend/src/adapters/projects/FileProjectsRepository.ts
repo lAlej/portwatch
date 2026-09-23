@@ -1,21 +1,40 @@
-// Adapter FileProjectsRepository: persiste cada Project como un JSON en
-// ${PROJECTS_DIR}/.projects/<id>.json. Writes atomicos via rename.
-// Listar = leer el directorio y parsear.
-//
-// Backfill: si un JSON escrito por una version anterior del schema no
-// tiene un campo esperado (ej. `envVars`, agregado despues), lo
-// completamos con defaults al leer. Asi proyectos viejos siguen
-// funcionando sin necesidad de migracion manual.
+// Persists each Project as JSON in ${PROJECTS_DIR}/.projects/<id>.json.
+// `backfill` covers schema drift (missing `envVars` etc.) on read so old
+// records keep working without a manual migration.
 import { promises as fs } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import type { ProjectsRepository } from '../../domain/ports/ProjectsRepository.js';
 import type { Project } from '../../domain/entities/Project.js';
+import type { ComposeFile } from '../../domain/entities/ComposeFile.js';
+import { NotFoundError } from '../../lib/errors.js';
 
 function backfill(p: Project): Project {
   return {
     ...p,
+    cloneUrl: typeof p.cloneUrl === 'string' ? p.cloneUrl : '',
     envVars: Array.isArray(p.envVars) ? p.envVars : [],
   };
+}
+
+// Rejects `..` traversal: the resolved path must stay inside project.path.
+function resolveComposePath(project: Project, relPath?: string): {
+  abs: string;
+  rel: string;
+} {
+  const rel = relPath ?? project.composeFile;
+  if (!rel) {
+    throw new NotFoundError(
+      `Project ${project.id} has no compose file configured`,
+    );
+  }
+  const root = resolve(project.path);
+  const abs = resolve(root, rel);
+  if (abs !== root && !abs.startsWith(root + sep)) {
+    throw new NotFoundError(
+      `Compose path "${rel}" escapes project directory`,
+    );
+  }
+  return { abs, rel };
 }
 
 export class FileProjectsRepository implements ProjectsRepository {
@@ -69,5 +88,29 @@ export class FileProjectsRepository implements ProjectsRepository {
   async remove(id: string): Promise<void> {
     const d = await this.dir();
     await fs.rm(join(d, `${id}.json`), { force: true });
+  }
+
+  async readComposeFile(
+    project: Project,
+    relPath?: string,
+  ): Promise<ComposeFile> {
+    const { abs, rel } = resolveComposePath(project, relPath);
+    try {
+      const content = await fs.readFile(abs, 'utf8');
+      return { relPath: rel, content };
+    } catch {
+      throw new NotFoundError(`Compose file "${rel}" not found on disk`);
+    }
+  }
+
+  async writeComposeFile(
+    project: Project,
+    content: string,
+    relPath?: string,
+  ): Promise<void> {
+    const { abs } = resolveComposePath(project, relPath);
+    const tmpPath = `${abs}.tmp`;
+    await fs.writeFile(tmpPath, content, 'utf8');
+    await fs.rename(tmpPath, abs);
   }
 }

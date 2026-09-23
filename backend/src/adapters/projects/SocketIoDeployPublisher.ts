@@ -8,4 +8,9 @@ export class SocketIoDeployPublisher implements DeployPublisher {
   publish(deploymentId: string, event: DeployEvent): void {
     this.io.to(`deploy:${deploymentId}`).emit(`deploy:${deploymentId}`, event);
   }
+
+  // io.emit (no .to(room)) fans out to every connected socket.
+  notifyContainersChanged(): void {
+    this.io.emit('containers:changed');
+  }
 }

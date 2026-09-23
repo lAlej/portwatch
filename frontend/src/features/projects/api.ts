@@ -15,6 +15,16 @@ const DeploymentsEnvelopeSchema = z.object({ deployments: z.array(DeploymentSche
 const DeployIdSchema = z.object({ deploymentId: z.string() });
 const EnvVarsSchema = z.array(EnvVarSchema);
 
+const ComposeFileSchema = z.object({
+  relPath: z.string(),
+  content: z.string(),
+});
+const ComposeEnvelopeSchema = z.object({ compose: ComposeFileSchema });
+const UpdateComposeResultSchema = z.object({
+  exitCode: z.number(),
+  error: z.string().optional(),
+});
+
 export const projectsApi = {
   list: (): Promise<Project[]> =>
     api
@@ -52,6 +62,42 @@ export const projectsApi = {
         DeployIdSchema,
       )
       .then((r) => r.deploymentId),
+
+  // GET /api/projects/:id/compose -> { compose: { relPath, content } }
+  getCompose: (
+    id: string,
+    relPath?: string,
+  ): Promise<{ relPath: string; content: string }> =>
+    api
+      .get<{ compose: { relPath: string; content: string } }>(
+        relPath
+          ? `/api/projects/${id}/compose?relPath=${encodeURIComponent(relPath)}`
+          : `/api/projects/${id}/compose`,
+        ComposeEnvelopeSchema,
+      )
+      .then((r) => r.compose),
+
+  // PUT /api/projects/:id/compose -> { exitCode, error? }
+  updateCompose: (
+    id: string,
+    content: string,
+    relPath?: string,
+  ): Promise<{ exitCode: number; error?: string }> =>
+    api.put(`/api/projects/${id}/compose`, { content, relPath }, UpdateComposeResultSchema),
+
+  // POST /api/projects/ad-hoc -> { project }
+  createAdHoc: (input: {
+    name: string;
+    composeContent: string;
+    envVars: EnvVar[];
+  }): Promise<Project> =>
+    api
+      .post<{ project: Project }>(
+        '/api/projects/ad-hoc',
+        input,
+        ProjectEnvelopeSchema,
+      )
+      .then((r) => r.project),
 };
 
 // Re-export so callers can construct EnvVar literals with type-checking.
