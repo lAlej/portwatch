@@ -7,6 +7,8 @@ import type { Deployment, DeploymentStatus } from '../../entities/Deployment.js'
 import type { Project } from '../../entities/Project.js';
 import { newDeploymentId } from '../../entities/deploymentId.js';
 import { NotFoundError } from '../../../lib/errors.js';
+import { assertNotSelfProject } from '../../../lib/selfProject.js';
+import { sanitizeProjectName } from '../../../lib/projectName.js';
 
 export class TriggerDeploy {
   constructor(
@@ -22,6 +24,7 @@ export class TriggerDeploy {
   async execute(input: { id: string }): Promise<{ deploymentId: string }> {
     const project = await this.deps.projects.get(input.id);
     if (!project) throw new NotFoundError(`Project ${input.id} not found`);
+    assertNotSelfProject(sanitizeProjectName(project.name));
 
     const deployment: Deployment = {
       id: newDeploymentId(),

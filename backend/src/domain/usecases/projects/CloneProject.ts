@@ -4,6 +4,7 @@ import type { Git } from '../../ports/Git.js';
 import type { Logger } from '../../ports/Logger.js';
 import type { Project, EnvVar } from '../../entities/Project.js';
 import { InvalidStateError } from '../../../lib/errors.js';
+import { assertNotSelfProject } from '../../../lib/selfProject.js';
 
 function deriveName(cloneUrl: string): string {
   const trimmed = cloneUrl.trim().replace(/\.git$/, '');
@@ -28,6 +29,7 @@ export class CloneProject {
     if (!url) throw new InvalidStateError('cloneUrl is required');
 
     const name = deriveName(url);
+    assertNotSelfProject(name);
     const dest = `${this.deps.projectsDir}/${name}`;
 
     if (await this.deps.repo.getByName(name)) {

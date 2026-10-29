@@ -1,3 +1,4 @@
+import { loadavg } from 'node:os';
 import si from 'systeminformation';
 import type {
   SystemStatsProvider,
@@ -9,6 +10,7 @@ import type { SystemStats } from '../../domain/entities/SystemStats.js';
 interface NetSample {
   rx: number;
   tx: number;
+  at: number;
 }
 
 export class SystemInfoStatsProvider implements SystemStatsProvider {
@@ -17,28 +19,25 @@ export class SystemInfoStatsProvider implements SystemStatsProvider {
   private lastNet: NetSample | null = null;
 
   async snapshot(): Promise<SystemStats> {
-    const [cpu, mem, fs, net, load, host, time] = await Promise.all([
+    const [cpu, mem, fs, net, host, time] = await Promise.all([
       si.currentLoad(),
       si.mem(),
       si.fsSize(),
       si.networkStats(),
-      si.currentLoad(),
       si.osInfo(),
       si.time(),
     ]);
 
     const cpuPercent = cpu.currentLoad ?? 0;
-    const loadArr = (load.avgLoad ?? 0).toString().split(',').map((n) => Number(n) || 0);
-    const loadAvg: [number, number, number] = [
-      loadArr[0] ?? 0,
-      loadArr[1] ?? 0,
-      loadArr[2] ?? 0,
-    ];
+    // 1/5/15-minute averages come from the OS (all zeros on Windows, which
+    // has no such concept). systeminformation only exposes a single number.
+    const [l1 = 0, l5 = 0, l15 = 0] = loadavg();
+    const loadAvg: [number, number, number] = [l1, l5, l15];
 
     const root = fs.find((f) => f.mount === '/' || f.mount === 'C:') ?? fs[0];
     const totalRx = net.reduce((s, n) => s + (n.rx_bytes ?? 0), 0);
     const totalTx = net.reduce((s, n) => s + (n.tx_bytes ?? 0), 0);
-    const { rxPerSec, txPerSec } = this.computeRates({ rx: totalRx, tx: totalTx });
+    const { rxPerSec, txPerSec } = this.computeRates({ rx: totalRx, tx: totalTx, at: Date.now() });
 
     return {
       hostname: host.hostname ?? 'unknown',
@@ -88,13 +87,14 @@ export class SystemInfoStatsProvider implements SystemStatsProvider {
     }
   }
 
+  // Rates use the real time between samples: besides the 1s timer, anyone
+  // calling snapshot() (GET /api/system/snapshot) also advances the baseline.
   private computeRates(current: NetSample): { rxPerSec: number; txPerSec: number } {
-    const now = Date.now();
     const prev = this.lastNet;
     this.lastNet = { ...current };
     if (!prev) return { rxPerSec: 0, txPerSec: 0 };
-    const dt = 1;
-    void now;
+    const dt = (current.at - prev.at) / 1000;
+    if (dt <= 0) return { rxPerSec: 0, txPerSec: 0 };
     return {
       rxPerSec: Math.max(0, current.rx - prev.rx) / dt,
       txPerSec: Math.max(0, current.tx - prev.tx) / dt,

@@ -6,6 +6,7 @@ import type { Logger } from '../../ports/Logger.js';
 import type { Project, EnvVar } from '../../entities/Project.js';
 import { InvalidStateError } from '../../../lib/errors.js';
 import { sanitizeProjectName } from '../../../lib/projectName.js';
+import { assertNotSelfProject } from '../../../lib/selfProject.js';
 
 // Creates a project without cloning a repo: just writes docker-compose.yml
 // (+ optional .env) under ${PROJECTS_DIR}/<name>/ and registers the Project
@@ -33,6 +34,7 @@ export class CreateAdHocComposeProject {
     if (!compose.trim()) throw new InvalidStateError('composeContent is required');
 
     const name = sanitizeProjectName(rawName);
+    assertNotSelfProject(name);
     if (await this.deps.repo.getByName(name)) {
       throw new InvalidStateError(`Project "${name}" already exists`);
     }

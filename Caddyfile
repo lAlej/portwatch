@@ -8,6 +8,21 @@
 :8080 {
 	encode gzip zstd
 
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		# Add once you serve over HTTPS (a domain block with auto-TLS):
+		# Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	# CSP for the SPA only; the API sets its own (default-src 'none').
+	# 'unsafe-inline' for styles is needed by xterm.js and Recharts, which set
+	# inline style attributes. Fonts come from Google Fonts (see index.html).
+	@spa not path /api/* /socket.io/*
+	header @spa Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+
 	reverse_proxy /api/* backend:4000
 	reverse_proxy /socket.io/* backend:4000 {
 		header_up Host {host}

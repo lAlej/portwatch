@@ -11,6 +11,18 @@ const FRAME_HEADER = 8;
 const MAX_FRAME_SIZE = 16 * 1024 * 1024;
 const LINE_TS_RE = /^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z)\]/;
 
+// A multiplexed frame starts with [stream type 0..2][0][0][0][size BE u32].
+// Decide from those leading bytes alone: the first chunk may well end in the
+// middle of the first frame (or even of its header), so its length says
+// nothing. Plain TTY text never starts with a control byte followed by NULs.
+function looksLikeFrameHeader(buf: Buffer): boolean {
+  if (buf.length === 0 || buf[0]! > 2) return false;
+  for (let i = 1; i < Math.min(4, buf.length); i++) {
+    if (buf[i] !== 0) return false;
+  }
+  return true;
+}
+
 function parseLineTimestamp(line: string, fallback: number): number {
   const m = LINE_TS_RE.exec(line);
   if (!m || m[1] === undefined) return fallback;
@@ -143,12 +155,7 @@ export class DockerLogStreamer implements LogStreamer {
         if (cancelled) return;
         const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
         if (!detectedMuxed) {
-          const looksMuxed =
-            buf.length >= FRAME_HEADER &&
-            buf[0] !== undefined &&
-            buf[0] <= 2 &&
-            buf.readUInt32BE(4) + FRAME_HEADER <= buf.length + (headerCarry.length > 0 ? headerCarry.length : 0);
-          if (looksMuxed) {
+          if (looksLikeFrameHeader(buf)) {
             detectedMuxed = true;
           } else {
             handleRaw(buf);

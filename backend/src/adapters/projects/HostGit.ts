@@ -32,7 +32,7 @@ function formatEnvLine(key: string, value: string): string {
 
 export class HostGit implements Git {
   async clone(url: string, dest: string): Promise<void> {
-    await spawnOnce('git', ['clone', '--depth', '1', url, dest], { env: gitEnv() });
+    await spawnOnce('git', ['clone', '--depth', '1', '--', url, dest], { env: gitEnv() });
   }
 
   pull(cwd: string): AsyncIterable<Line> {

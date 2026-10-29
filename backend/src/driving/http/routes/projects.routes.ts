@@ -7,11 +7,23 @@ import { validate } from '../middleware/validate.js';
 
 const idParam = z.object({ id: z.string().min(1) });
 const envVarSchema = z.object({
-  key: z.string().min(1).max(256),
+  // Written verbatim into a .env file: restrict to shell-style names so a key
+  // can't smuggle in newlines or extra assignments.
+  key: z
+    .string()
+    .trim()
+    .min(1)
+    .max(256)
+    .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'must match [A-Za-z_][A-Za-z0-9_]*'),
   value: z.string().max(8192),
 });
 const cloneBody = z.object({
-  cloneUrl: z.string().url().or(z.string().regex(/^[\w-]+@[\w.-]+:[\w./-]+$/)),
+  // Either a URL or scp-style `user@host:path`. The scp form must start with an
+  // alphanumeric so the value can never be parsed by git as a command-line option.
+  cloneUrl: z
+    .string()
+    .url()
+    .or(z.string().regex(/^[A-Za-z0-9_][\w-]*@[\w.-]+:[\w./-]+$/)),
   envVars: z.array(envVarSchema).optional().default([]),
 });
 const updateEnvBody = z.object({

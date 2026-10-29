@@ -4,7 +4,18 @@ import type { DeploymentsRepository } from '../../domain/ports/DeploymentsReposi
 import type { Deployment } from '../../domain/entities/Deployment.js';
 
 export class NdjsonDeploymentsRepository implements DeploymentsRepository {
+  // Writes are read-modify-write on a single file and share one temp path, so
+  // they must not interleave (concurrent deploys would lose records or fail
+  // the rename). Chain them through one promise.
+  private writeQueue: Promise<unknown> = Promise.resolve();
+
   constructor(private readonly projectsDir: string) {}
+
+  private serialized<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.writeQueue.then(fn, fn);
+    this.writeQueue = run.catch(() => undefined);
+    return run;
+  }
 
   private get file(): string {
     return join(this.projectsDir, '.deployments.ndjson');
@@ -19,12 +30,18 @@ export class NdjsonDeploymentsRepository implements DeploymentsRepository {
     }
   }
 
-  async append(d: Deployment): Promise<void> {
-    await this.ensureFile();
-    await fs.appendFile(this.file, JSON.stringify(d) + '\n', 'utf8');
+  append(d: Deployment): Promise<void> {
+    return this.serialized(async () => {
+      await this.ensureFile();
+      await fs.appendFile(this.file, JSON.stringify(d) + '\n', 'utf8');
+    });
   }
 
-  async update(d: Deployment): Promise<void> {
+  update(d: Deployment): Promise<void> {
+    return this.serialized(() => this.rewriteWith(d));
+  }
+
+  private async rewriteWith(d: Deployment): Promise<void> {
     await this.ensureFile();
     const all = await this.readAll();
     const idx = all.findIndex((x) => x.id === d.id);

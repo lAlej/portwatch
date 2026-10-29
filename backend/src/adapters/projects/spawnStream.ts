@@ -17,8 +17,8 @@ function shouldSuppress(line: string): boolean {
 
 function emitLines(chunk: string, stream: StreamKind, cb: (l: Line) => void): void {
   for (const l of chunk.split('\n')) {
-    if (l.length === 0) continue;
     const cleaned = l.replace(/\r$/, '');
+    if (cleaned.length === 0) continue;
     if (shouldSuppress(cleaned)) continue;
     cb({ line: cleaned, stream });
   }

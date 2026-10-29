@@ -46,6 +46,16 @@ function computeBlock(cur: RawStats): { read: number; write: number } {
   return { read, write };
 }
 
+function destroyStream(s: NodeJS.ReadableStream): void {
+  const maybe = s as unknown as { destroy?: () => void; end?: () => void };
+  try {
+    if (typeof maybe.destroy === 'function') maybe.destroy();
+    else if (typeof maybe.end === 'function') maybe.end();
+  } catch {
+    /* ignore */
+  }
+}
+
 export class DockerStatsProvider implements ContainerStatsProvider {
   private readonly subs = new Map<string, Set<StatsListener<ContainerStats>>>();
   private readonly prevById = new Map<string, RawStats>();
@@ -77,6 +87,12 @@ export class DockerStatsProvider implements ContainerStatsProvider {
     try {
       const stream = await this.docker.getContainer(id).stats({ stream: true });
       const s = stream as unknown as NodeJS.ReadableStream;
+      // Everyone may have left while Docker was opening the stream (or a
+      // second start may have raced us): don't keep a stream nobody reads.
+      if (!this.subs.has(id) || this.streams.has(id)) {
+        destroyStream(s);
+        return;
+      }
       this.streams.set(id, s);
       let prev = this.prevById.get(id);
       s.on('data', (chunk: Buffer | string) => {
@@ -103,7 +119,16 @@ export class DockerStatsProvider implements ContainerStatsProvider {
           prev = cur;
           this.prevById.set(id, cur);
           const listeners = this.subs.get(id);
-          if (listeners) for (const l of listeners) l(sample);
+          if (listeners) {
+            for (const l of listeners) {
+              // One broken consumer (e.g. a closed socket) must not starve the rest.
+              try {
+                l(sample);
+              } catch {
+                /* ignore */
+              }
+            }
+          }
         } catch {
           // ignore malformed frames
         }
@@ -116,15 +141,7 @@ export class DockerStatsProvider implements ContainerStatsProvider {
 
   private stopStream(id: string): void {
     const s = this.streams.get(id);
-    if (s) {
-      const maybe = s as unknown as { destroy?: () => void; end?: () => void };
-      try {
-        if (typeof maybe.destroy === 'function') maybe.destroy();
-        else if (typeof maybe.end === 'function') maybe.end();
-      } catch {
-        /* ignore */
-      }
-    }
+    if (s) destroyStream(s);
     this.streams.delete(id);
     this.prevById.delete(id);
   }

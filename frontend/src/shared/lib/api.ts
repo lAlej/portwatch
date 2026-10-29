@@ -18,6 +18,19 @@ export class ApiError extends Error {
   }
 }
 
+// Validation failures arrive as `issues: [{ path, message }]` with no top-level
+// message; show which field is wrong instead of a bare "Bad Request".
+function describeIssues(issues: unknown): string | undefined {
+  if (!Array.isArray(issues)) return undefined;
+  const parts = issues.flatMap((i: unknown) => {
+    if (!i || typeof i !== 'object') return [];
+    const { path, message } = i as { path?: unknown; message?: unknown };
+    if (typeof message !== 'string' || message === '') return [];
+    return [typeof path === 'string' && path !== '' ? `${path}: ${message}` : message];
+  });
+  return parts.length > 0 ? parts.join('; ') : undefined;
+}
+
 async function request<T>(
   path: string,
   init: RequestInit & { schema?: z.ZodType<T> },
@@ -29,11 +42,30 @@ async function request<T>(
   });
 
   const text = await res.text();
-  const json: unknown = text ? JSON.parse(text) : null;
+  // The body is not necessarily ours: a reverse proxy answers 502/504 with an
+  // HTML page while the backend restarts. Don't surface that as a JSON syntax error.
+  let json: unknown = null;
+  let malformed = false;
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      malformed = true;
+    }
+  }
 
   if (!res.ok) {
     const e = (json ?? {}) as { error?: string; message?: string; issues?: unknown };
-    throw new ApiError(res.status, e.error ?? 'error', e.message ?? res.statusText, e.issues);
+    throw new ApiError(
+      res.status,
+      e.error ?? 'error',
+      e.message ?? describeIssues(e.issues) ?? res.statusText,
+      e.issues,
+    );
+  }
+
+  if (malformed) {
+    throw new ApiError(res.status, 'invalid_response', 'Invalid response from server');
   }
 
   const schema = init.schema;

@@ -4,6 +4,7 @@ import type { Logger } from '../../ports/Logger.js';
 import type { DeployPublisher } from '../../ports/DeployPublisher.js';
 import { NotFoundError } from '../../../lib/errors.js';
 import { sanitizeProjectName } from '../../../lib/projectName.js';
+import { assertNotSelfProject } from '../../../lib/selfProject.js';
 
 export interface UpdateProjectComposeResult {
   exitCode: number;
@@ -32,6 +33,7 @@ export class UpdateProjectCompose {
   }): Promise<UpdateProjectComposeResult> {
     const project = await this.deps.repo.get(input.id);
     if (!project) throw new NotFoundError(`Project ${input.id} not found`);
+    assertNotSelfProject(sanitizeProjectName(project.name));
 
     await this.deps.repo.writeComposeFile(project, input.content, input.relPath);
     this.deps.logger.info('compose file updated', {

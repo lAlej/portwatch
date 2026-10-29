@@ -135,6 +135,11 @@ pnpm dev          # vite on :5173
 
 Open <http://localhost:5173>. Sign in with the username/password you hashed.
 
+`backend/.env.example` already sets `CORS_ORIGINS=http://localhost:5173` and
+`TRUST_PROXY_HOPS=0` for this setup: Vite rewrites the `Host` header when it
+proxies, so the backend needs the dev origin allow-listed to accept the
+WebSocket handshake.
+
 ---
 
 ---
@@ -182,6 +187,12 @@ curl https://yourdomain.example.com/api/health
 | `JWT_SECRET` | 32+ random bytes, base64 or hex. Rotating it logs everyone out. |
 | `COOKIE_SECURE` | `true` in production (HTTPS-only cookie). `false` only for local HTTP dev. |
 | `PORT` | Backend listen port. Defaults to `4000`. Compose expects `4000`. |
+| `CORS_ORIGINS` | Comma-separated browser origins allowed to call the API / open WebSockets cross-origin. Empty (default) = same-origin only. |
+| `TRUST_PROXY_HOPS` | Reverse proxies in front of the backend. `1` behind Caddy (default), `0` when reachable directly. Wrong values let clients spoof their IP and bypass the login rate limit. |
+| `LOGIN_RATE_LIMIT_MAX` / `LOGIN_RATE_LIMIT_WINDOW_MS` | Failed logins allowed per IP per window (default 10 per 15 min) before HTTP 429. |
+
+The backend refuses to start if `JWT_SECRET` is still the `.env.example`
+placeholder or `ADMIN_PASSWORD_HASH` is not a bcrypt hash.
 
 Frontend build arg (set in `docker-compose.yml`):
 
@@ -204,12 +215,13 @@ Frontend build arg (set in `docker-compose.yml`):
   schemas in `frontend/src/shared/lib/schemas.ts` mirror the backend's.
 - **System stats come from `systeminformation`, not from `/proc` directly.**
   Linux + macOS + Windows parity; no shell-out; one less attack surface.
-- **Docker socket mounted read-only.** Start/pause/restart/kill are runtime
-  ops against an existing container, not image / volume / network ops.
-  You cannot `docker pull` or build through this app. Pull on the host.
+- **Docker socket mounted read-write.** The backend runs `docker compose
+  build` / `up`, which need write access to the engine. Access to the
+  socket is equivalent to root on the host: treat the admin login as a root
+  credential.
 - **Self-containers are hidden.** Containers whose `com.docker.compose.project`
   is `portwatch` (the constant `SELF_COMPOSE_PROJECT` in
-  `DockerContainerRepository.ts`) are filtered out at the repository layer,
+  `backend/src/lib/selfProject.ts`) are filtered out at the repository layer,
   so the dashboard's own backend, frontend and caddy containers never
   appear in the list — preventing an accidental kill that would take down
   the UI itself. Containers started outside compose (no project label)
@@ -275,13 +287,14 @@ Docker Desktop with names like `<service>-builder-<hash>` or
 creates and removes automatically per stage — not your app, not a bug.
 The final running container stays.
 
-**Portwatch does not redeploy itself.** The deploy runner refuses to
-touch any project whose `name` resolves to this dashboard's own compose
-project (it isn't filtered by name today, but the operator is expected
-to keep Portwatch out of the project list — `docker compose up -d
---build` on the dashboard's own repo would kill the running backend
-mid-deploy). To update Portwatch, `git pull` on the host and re-run
-`docker compose up -d --build` from your shell.
+**Portwatch does not redeploy itself.** Cloning, creating, deploying or
+editing the compose file of a project whose name resolves to this
+dashboard's own compose project (`SELF_COMPOSE_PROJECT` in
+`backend/src/lib/selfProject.ts`, `portwatch` by default) is rejected,
+because `docker compose up` would kill the backend mid-deploy. To update
+Portwatch, `git pull` on the host and re-run `docker compose up -d
+--build` from your shell. If you rename the repo directory or use
+`docker compose -p`, update that constant.
 
 ### SSH for private repos
 
@@ -443,6 +456,24 @@ cd backend && pnpm typecheck && pnpm build
 cd frontend && pnpm typecheck && pnpm build
 ```
 
+### Tests
+
+```bash
+cd backend  && pnpm test            # Vitest, ~4 s, no Docker daemon needed
+cd frontend && pnpm test            # Vitest + jsdom + Testing Library
+pnpm test:coverage                  # either project; prints a coverage table
+```
+
+- **Backend** — use cases run against in-memory fakes of the ports
+  (`src/testing/fakes.ts`); file-backed adapters run on a temp directory;
+  `src/testing/app.ts` boots the real composition root behind a real HTTP +
+  Socket.IO server for API tests (login, rate limiting, CORS, cross-site
+  WebSocket rejection, path traversal, validation). The Docker adapters are
+  tested against a fake Dockerode, so nothing ever touches your engine.
+- **Frontend** — stores and the HTTP client with a mocked `fetch` / socket;
+  forms, tables and modals with Testing Library.
+- Tests are excluded from `pnpm build`; `pnpm typecheck` covers them.
+
 The frontend ships a production bundle to `frontend/dist/` (~4.8 KB gz CSS,
 ~236 KB gz JS). Backend emits to `backend/dist/`.
 
@@ -460,11 +491,26 @@ curl -s http://localhost:4000/api/health | jq
 ## Security
 
 - **JWT in httpOnly, SameSite=Strict cookie.** JavaScript on the page
-  cannot read it. CSRF is mitigated at the cookie level.
-- **bcrypt password hashing.** No plaintext anywhere on disk or in env.
-- **Docker socket is mounted read-only.** The app can manage containers
-  already on the host, but cannot modify the Docker daemon's configuration,
-  pull images, or build new ones.
+  cannot read it. CSRF is mitigated at the cookie level. Tokens are pinned
+  to HS256 and their claims are validated on every request. The cookie is
+  redacted from request logs.
+- **bcrypt password hashing.** No plaintext anywhere on disk or in env. The
+  password hash is always checked, even for an unknown username, so login
+  timing does not reveal which usernames exist.
+- **Login rate limiting.** Failed attempts are limited per client IP
+  (`LOGIN_RATE_LIMIT_*`), keyed on the address Caddy forwards.
+- **Same-origin by default.** CORS is off unless `CORS_ORIGINS` lists an
+  origin, and WebSocket handshakes from other origins are rejected
+  (cross-site WebSocket hijacking). Socket messages are schema-validated.
+- **Security headers.** The API answers with `default-src 'none'`; Caddy adds
+  a CSP and `nosniff` / `X-Frame-Options` / `Referrer-Policy` for the SPA.
+  Add HSTS once you serve over HTTPS.
+- **Docker socket is mounted read-write and is root-equivalent.** Anyone who
+  can log in can run arbitrary containers on the host through compose files.
+  Keep the password strong, keep the port off the public internet when you
+  can (VPN / IP allow-list), and prefer HTTPS: with plain HTTP on `:8080`
+  the login and the session cookie cross the network unencrypted.
+- **Containers drop privilege escalation** (`no-new-privileges`).
 - **`COOKIE_SECURE=true` in production.** Browser refuses to send the
   cookie over plain HTTP.
 - **Single admin.** No user management surface. No privilege escalation

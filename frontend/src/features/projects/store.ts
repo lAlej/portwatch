@@ -53,6 +53,14 @@ interface ProjectsState {
   ) => Promise<{ exitCode: number; error?: string }>;
 }
 
+// The editor lets users add a row and leave it empty. The server refuses a
+// request containing a blank key, so drop those rows (and trim the keys).
+function withoutBlankKeys(envVars: EnvVar[]): EnvVar[] {
+  return envVars
+    .map((v) => ({ ...v, key: v.key.trim() }))
+    .filter((v) => v.key.length > 0);
+}
+
 function emptyDeployState(deploymentId: string, projectId: string): DeployState {
   return {
     deploymentId,
@@ -100,18 +108,23 @@ export const useProjects = create<ProjectsState>((set, get) => ({
   },
 
   add: async (cloneUrl: string, envVars: EnvVar[]) => {
-    const project = await projectsApi.clone(cloneUrl, envVars);
+    const project = await projectsApi.clone(cloneUrl, withoutBlankKeys(envVars));
     set((s) => ({ items: [project, ...s.items] }));
     return project;
   },
 
   createAdHoc: async (name, composeContent, envVars) => {
-    const project = await projectsApi.createAdHoc({ name, composeContent, envVars });
+    const project = await projectsApi.createAdHoc({
+      name,
+      composeContent,
+      envVars: withoutBlankKeys(envVars),
+    });
     set((s) => ({ items: [project, ...s.items] }));
     return project;
   },
 
-  updateEnv: async (id: string, envVars: EnvVar[]) => {
+  updateEnv: async (id: string, rawEnvVars: EnvVar[]) => {
+    const envVars = withoutBlankKeys(rawEnvVars);
     await projectsApi.updateEnv(id, envVars);
     set((s) => ({
       items: s.items.map((p) => (p.id === id ? { ...p, envVars } : p)),

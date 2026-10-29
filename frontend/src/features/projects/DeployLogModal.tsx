@@ -26,10 +26,13 @@ export function DeployLogModal({ deploymentId, onClose }: Props) {
   const closeDeploy = useProjects((s) => s.closeDeploy);
   const tailRef = useRef<HTMLDivElement | null>(null);
 
+  // Depend on the project id, not on `deploy`: the store replaces that object
+  // on every log line, which would resubscribe (two socket messages) per line.
+  const projectId = deploy?.projectId;
   useEffect(() => {
-    if (!deploy) return;
-    return subscribe(deploymentId, deploy.projectId);
-  }, [deploymentId, deploy, subscribe]);
+    if (projectId === undefined) return;
+    return subscribe(deploymentId, projectId);
+  }, [deploymentId, projectId, subscribe]);
 
   useEffect(() => {
     const el = tailRef.current;

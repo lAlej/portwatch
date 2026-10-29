@@ -1,15 +1,20 @@
 import { Server as IoServer, type Socket } from 'socket.io';
 import type { Server as HttpServer } from 'node:http';
+import { z } from 'zod';
 import type { AppWiring } from '../../composition/container.js';
 import { UnauthorizedError } from '../../lib/errors.js';
 import type { LogLine } from '../../domain/ports/LogStreamer.js';
+import { isAllowedOrigin } from '../../lib/origin.js';
 
-interface SubscribePayload {
-  channel: 'system:stats' | 'container:stats' | 'container:logs' | 'deploy';
-  id?: string;
-  tail?: number;
-  since?: number;
-}
+// Client messages are untrusted: validate shape and bound the numbers before
+// they reach Docker (an unbounded `tail` would read the whole log history).
+const subscribeSchema = z.object({
+  channel: z.enum(['system:stats', 'container:stats', 'container:logs', 'deploy']),
+  id: z.string().min(1).max(128).optional(),
+  tail: z.number().int().min(0).max(10_000).optional(),
+  since: z.number().int().min(0).optional(),
+});
+type SubscribePayload = z.infer<typeof subscribeSchema>;
 
 interface AuthedSocket extends Socket {
   data: { user?: { username: string; role: 'admin' }; cleanup: Array<() => void> };
@@ -17,7 +22,18 @@ interface AuthedSocket extends Socket {
 
 export function attachSocketServer(http: HttpServer, wiring: AppWiring): IoServer {
   const io = new IoServer(http, {
-    cors: { origin: true, credentials: true },
+    cors: wiring.config.CORS_ORIGINS.length
+      ? { origin: wiring.config.CORS_ORIGINS, credentials: true }
+      : undefined,
+    // CORS doesn't apply to WebSocket handshakes, and the auth cookie rides
+    // along on them. Reject foreign origins here to block cross-site
+    // WebSocket hijacking.
+    allowRequest: (req, callback) => {
+      callback(
+        null,
+        isAllowedOrigin(req.headers.origin, req.headers.host, wiring.config.CORS_ORIGINS),
+      );
+    },
     serveClient: false,
   });
 
@@ -61,8 +77,11 @@ export function attachSocketServer(http: HttpServer, wiring: AppWiring): IoServe
     const subscribeKey = (p: SubscribePayload): string =>
       p.id ? `${p.channel}:${p.id}` : p.channel;
 
-    socket.on('subscribe', (payload: SubscribePayload) => {
+    socket.on('subscribe', (raw: unknown) => {
       try {
+        const parsed = subscribeSchema.safeParse(raw);
+        if (!parsed.success) throw new Error('invalid subscribe payload');
+        const payload = parsed.data;
         const key = subscribeKey(payload);
         // Idempotente: si ya hay una suscripción viva para esta clave,
         // liberamos la anterior antes de crear la nueva para no duplicar
@@ -101,7 +120,7 @@ export function attachSocketServer(http: HttpServer, wiring: AppWiring): IoServe
             void socket.leave(room);
           });
         } else {
-          throw new Error(`unknown channel: ${String((payload as { channel?: string }).channel)}`);
+          throw new Error('unknown channel');
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'subscribe failed';
@@ -109,8 +128,9 @@ export function attachSocketServer(http: HttpServer, wiring: AppWiring): IoServe
       }
     });
 
-    socket.on('unsubscribe', (payload: SubscribePayload) => {
-      release(subscribeKey(payload));
+    socket.on('unsubscribe', (raw: unknown) => {
+      const parsed = subscribeSchema.safeParse(raw);
+      if (parsed.success) release(subscribeKey(parsed.data));
     });
 
     socket.on('disconnect', () => {

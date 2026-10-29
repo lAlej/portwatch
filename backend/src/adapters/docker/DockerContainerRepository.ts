@@ -6,11 +6,10 @@ import type {
   ContainerState,
 } from '../../domain/entities/Container.js';
 import { NotFoundError, InvalidStateError, DockerUnavailableError } from '../../lib/errors.js';
-
-const SELF_COMPOSE_PROJECT = 'portwatch';
+import { isSelfProject } from '../../lib/selfProject.js';
 
 function isSelfComposeProject(project: string | undefined): boolean {
-  return project !== undefined && project === SELF_COMPOSE_PROJECT;
+  return project !== undefined && isSelfProject(project);
 }
 
 function mapState(raw: string): ContainerState {
